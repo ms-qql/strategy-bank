@@ -8,6 +8,7 @@ Provider-Credential-Management unter ~/.config/opencode) — diese App
 import json
 import re
 import subprocess
+import uuid as _uuid
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -265,17 +266,20 @@ def execute_extraction(run_id: UUID, source_id: UUID, source_content: str, sourc
         with transaction() as cur:
             for raw_item in strategies:
                 normalized = _normalize_strategy(raw_item)
+                draft_id = _uuid.uuid4()
                 cur.execute(
                     """
                     INSERT INTO strategy_drafts (
-                        extraction_run_id, source_hash, version, name, thesis, category, direction,
+                        id, family_id, extraction_run_id, source_hash, version,
+                        name, thesis, category, direction,
                         entry_rule, exit_rule, warmup_requirement,
                         simultaneous_entry_exit_behavior, reversal_behavior,
-                        status, status_reason
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id
+                        status, status_reason, original_snapshot
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     [
+                        draft_id,
+                        draft_id,  # family_id = own id for initial creation
                         run_id,
                         source_hash,
                         normalized["version"],
@@ -290,9 +294,9 @@ def execute_extraction(run_id: UUID, source_id: UUID, source_content: str, sourc
                         normalized["reversal_behavior"],
                         normalized["status"],
                         normalized["status_reason"],
+                        json.dumps(raw_item, ensure_ascii=False),
                     ],
                 )
-                draft_id = cur.fetchone()["id"]
 
                 for p in normalized["parameters"]:
                     cur.execute(

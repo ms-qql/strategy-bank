@@ -22,7 +22,8 @@ from app.main import app  # noqa: E402
 def _clean_db():
     run_command(
         "TRUNCATE sources, extraction_runs, strategy_drafts, "
-        "draft_parameters, draft_source_citations, draft_open_questions CASCADE"
+        "draft_parameters, draft_source_citations, draft_open_questions, "
+        "strategy_versions, version_parameters CASCADE"
     )
     yield
 

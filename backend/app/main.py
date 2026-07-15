@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from psycopg.errors import ForeignKeyViolation, InvalidTextRepresentation
 
 from .config import settings
+from .routes import drafts as draft_routes
 from .routes import extractions as extraction_routes
 from .routes import sources as source_routes
 
@@ -18,7 +19,7 @@ app = FastAPI(title="Strategy Bank API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_allow_origins,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["content-type"],
     allow_credentials=False,
 )
@@ -55,3 +56,4 @@ def health() -> dict[str, str]:
 
 app.include_router(source_routes.router)
 app.include_router(extraction_routes.router)
+app.include_router(draft_routes.router)
