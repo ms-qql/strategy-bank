@@ -10,4 +10,4 @@
 3. Die öffentliche Domain ausschließlich dem Service `strategy-bank-web` auf Container-Port `3000` zuordnen und TLS aktivieren. Datenbank und API erhalten keine Domain.
 4. Auto Deploy aktivieren und den ersten Build starten.
 
-Das Frontend leitet `/api/*` intern an FastAPI weiter. Dadurch werden weder eine öffentliche API-URL noch CORS-Origins für die Produktionsdomain benötigt. Beim Start führt das Backend die vorhandenen idempotenten SQL-Dateien aus `backend/sql/` aus. Der Extraktions-Default ist `opencode-go/kimi-k2.7-code`; ein anderes Go-Modell kann über `EXTRACTION_MODEL` gesetzt werden.
+Das Frontend leitet `/api/*` intern an FastAPI weiter. Dadurch werden weder eine öffentliche API-URL noch CORS-Origins für die Produktionsdomain benötigt. Beim Start führt das Backend die vorhandenen idempotenten SQL-Dateien aus `backend/sql/` aus. Der Extraktions-Default ist `opencode-go/deepseek-v4-flash`; ein anderes Go-Modell kann über `EXTRACTION_MODEL` gesetzt werden.

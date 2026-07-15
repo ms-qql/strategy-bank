@@ -6,6 +6,7 @@ Provider-Credential-Management unter ~/.config/opencode) — diese App
 """
 
 import json
+import logging
 import re
 import subprocess
 import uuid as _uuid
@@ -17,6 +18,7 @@ from ..constants import CATEGORIES, DIRECTIONS, FALLBACK_CATEGORY
 from ..db import run_command, transaction
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
+logger = logging.getLogger(__name__)
 
 _REQUIRED_LOCKED_FIELDS = [
     "entry_rule",
@@ -229,7 +231,14 @@ def _normalize_strategy(raw: dict) -> dict:
     }
 
 
-def _mark_failed(run_id: UUID, source_id: UUID, _message: str) -> None:
+def _mark_failed(run_id: UUID, source_id: UUID, exc: Exception, stage: str) -> None:
+    logger.error(
+        "Extraction failed run_id=%s source_id=%s stage=%s error_type=%s",
+        run_id,
+        source_id,
+        stage,
+        type(exc).__name__,
+    )
     run_command(
         "UPDATE extraction_runs SET status = 'fehlgeschlagen', finished_at = %s, error_message = %s WHERE id = %s",
         [datetime.now(timezone.utc), "Extraktion konnte nicht abgeschlossen werden.", run_id],
@@ -246,7 +255,7 @@ def execute_extraction(run_id: UUID, source_id: UUID, source_content: str, sourc
         raw_output = run_opencode(build_prompt(source_content))
         parsed = parse_model_output(raw_output)
     except Exception as exc:  # Provider-Fehler/Timeout/kein valides JSON → kein stiller Retry.
-        _mark_failed(run_id, source_id, str(exc))
+        _mark_failed(run_id, source_id, exc, "provider_or_parser")
         return
 
     strategies = parsed["strategies"]
@@ -332,4 +341,4 @@ def execute_extraction(run_id: UUID, source_id: UUID, source_content: str, sourc
                 [source_id],
             )
     except Exception as exc:
-        _mark_failed(run_id, source_id, f"Speichern der Entwürfe fehlgeschlagen: {exc}")
+        _mark_failed(run_id, source_id, exc, "persistence")
