@@ -42,12 +42,15 @@ def _make_frozen_version(client: TestClient) -> dict:
         """INSERT INTO strategy_drafts
            (id, family_id, extraction_run_id, source_hash, version,
             name, thesis, category, direction,
-            entry_rule, exit_rule, warmup_requirement, status)
-           VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            entry_rule, exit_rule, warmup_requirement, status,
+            position_mode, position_mode_confirmed,
+            mts_compatibility, mts_confirmed)
+           VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         [
             draft_id, draft_id, run_id, "abc123",
             "Test Strategy", "Test thesis", "Trendfolge", "kombiniert",
             "RSI > 30", "RSI < 70", "100 bars", "Entwurf",
+            "entry_exit", True, "discrete", True,
         ],
     )
     resp = client.post(f"/drafts/{draft_id}/freeze")

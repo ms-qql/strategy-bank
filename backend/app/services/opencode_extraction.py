@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from ..config import settings
-from ..constants import CATEGORIES, DIRECTIONS, FALLBACK_CATEGORY
+from ..constants import CATEGORIES, DIRECTIONS, FALLBACK_CATEGORY, MTS_COMPATIBILITIES, POSITION_MODES
 from ..db import run_command, transaction
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
@@ -39,6 +39,19 @@ markierst du als offene Unklarheit statt sie stillschweigend zu konkretisieren.
 
 Feste Kategorienliste (wähle genau eine, sonst "Sonstige"): {categories_list}
 Erlaubte Richtungswerte: {directions_list}
+Erlaubter Positionsmodus: signal_reversal | entry_exit | null
+Crypto-MTS-Eignung: continuous | discrete | unclear | null
+
+signal_reversal: Ein neues Signal in Gegenrichtung schließt die bestehende Position
+                 und eröffnet sofort die Gegenposition. Typisches SMA-Crossover-Verhalten.
+entry_exit: Die Strategie trennt Entry und Exit. Eine Position wird erst durch einen
+            expliziten Exit geschlossen; ohne eigenen Exit erhält sie den Systemdefault.
+
+continuous: Es existiert ein natürlicher, kontinuierlicher Stärkewert
+            (z. B. (fast_sma − slow_sma) / volatility) als Forecast zwischen −20 und +20.
+discrete: Long/Flat/Short ist eindeutig bestimmbar, aber eine kontinuierliche Stärke
+          würde zusätzliche, nicht belegte Logik erfordern.
+unclear: Keine verlässliche Crypto-MTS-Einstufung möglich (allein kein Testbarkeits-Hindernis).
 
 Antworte AUSSCHLIESSLICH mit einem einzigen ```json-Codeblock, der exakt diesem \
 Schema entspricht (keine Erklärung davor oder danach). Schließe den Codeblock \
@@ -59,6 +72,8 @@ zwingend mit ``` ab:
       "reversal_behavior": "string",
       "status": "Entwurf | nicht testbar",
       "status_reason": "string oder null",
+      "position_mode": "signal_reversal | entry_exit | null",
+      "mts_compatibility": "continuous | discrete | unclear | null",
       "parameters": [
         {{"name": "string", "value": "string", "unit": "string", "allowed_range": "string"}}
       ],
@@ -159,6 +174,14 @@ def _normalize_strategy(raw: dict) -> dict:
         status = "Entwurf"
     status_reason = raw.get("status_reason")
 
+    position_mode = raw.get("position_mode")
+    if position_mode not in POSITION_MODES:
+        position_mode = None
+
+    mts_compatibility = raw.get("mts_compatibility")
+    if mts_compatibility not in MTS_COMPATIBILITIES:
+        mts_compatibility = None
+
     # Server-seitig erzwungen (nie dem Modell vertraut): fehlende Entry-/Exit-
     # Regel sperrt den Entwurf, unabhängig davon, was das Modell selbst meldet.
     missing = [f for f in _REQUIRED_LOCKED_FIELDS if not str(raw.get(f) or "").strip()]
@@ -225,6 +248,8 @@ def _normalize_strategy(raw: dict) -> dict:
         "reversal_behavior": raw.get("reversal_behavior"),
         "status": status,
         "status_reason": status_reason,
+        "position_mode": position_mode,
+        "mts_compatibility": mts_compatibility,
         "parameters": parameters,
         "citations": citations,
         "open_questions": open_questions,
@@ -283,12 +308,13 @@ def execute_extraction(run_id: UUID, source_id: UUID, source_content: str, sourc
                         name, thesis, category, direction,
                         entry_rule, exit_rule, warmup_requirement,
                         simultaneous_entry_exit_behavior, reversal_behavior,
-                        status, status_reason, original_snapshot
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        status, status_reason, original_snapshot,
+                        position_mode, mts_compatibility
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     [
                         draft_id,
-                        draft_id,  # family_id = own id for initial creation
+                        draft_id,
                         run_id,
                         source_hash,
                         normalized["version"],
@@ -304,6 +330,8 @@ def execute_extraction(run_id: UUID, source_id: UUID, source_content: str, sourc
                         normalized["status"],
                         normalized["status_reason"],
                         json.dumps(raw_item, ensure_ascii=False),
+                        normalized["position_mode"],
+                        normalized["mts_compatibility"],
                     ],
                 )
 

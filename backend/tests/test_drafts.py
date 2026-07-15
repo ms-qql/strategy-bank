@@ -42,14 +42,20 @@ def _make_draft(run_id: str, **overrides) -> dict:
     exit_rule = overrides.pop("exit_rule", "RSI < 70")
     warmup = overrides.pop("warmup_requirement", "100 bars")
     status = overrides.pop("status", "Entwurf")
+    position_mode = overrides.pop("position_mode", None)
+    position_mode_confirmed = overrides.pop("position_mode_confirmed", False)
+    mts_compatibility = overrides.pop("mts_compatibility", None)
+    mts_confirmed = overrides.pop("mts_confirmed", False)
     run_command(
         """INSERT INTO strategy_drafts
            (id, family_id, extraction_run_id, source_hash, version,
             name, thesis, category, direction,
             entry_rule, exit_rule, warmup_requirement,
             simultaneous_entry_exit_behavior, reversal_behavior,
-            status, original_snapshot)
-           VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            status, original_snapshot,
+            position_mode, position_mode_confirmed,
+            mts_compatibility, mts_confirmed)
+           VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         [
             draft_id, draft_id, run_id, "abc123",
             name, thesis, category, direction,
@@ -58,6 +64,8 @@ def _make_draft(run_id: str, **overrides) -> dict:
             overrides.get("reversal_behavior"),
             status,
             '{"name":"KI-Name","thesis":"KI-These","entry_rule":"RSI < 30","exit_rule":"RSI > 70","parameters":[{"name":"period","value":"14"}]}',
+            position_mode, position_mode_confirmed,
+            mts_compatibility, mts_confirmed,
         ],
     )
     return {"id": draft_id, "family_id": draft_id, "name": name, "status": status}
@@ -172,7 +180,8 @@ class TestFreeze:
     def test_freeze_creates_version(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
-        d = _make_draft(run, warmup_requirement="0 bars")
+        d = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
         _add_parameter(d["id"], "period", "14")
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
@@ -192,10 +201,12 @@ class TestFreeze:
     def test_freeze_increments_version_number(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
-        d1 = _make_draft(run, warmup_requirement="0 bars")
+        d1 = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
+                         position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
         client.post(f"/drafts/{d1['id']}/freeze")
 
-        d2 = _make_draft(run, warmup_requirement="0 bars")
+        d2 = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
+                         position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
         run_command("UPDATE strategy_drafts SET family_id = %s WHERE id = %s", [d1["family_id"], d2["id"]])
 
         resp = client.post(f"/drafts/{d2['id']}/freeze")
@@ -205,7 +216,8 @@ class TestFreeze:
     def test_freeze_blocked_by_open_questions(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
-        d = _make_draft(run, warmup_requirement="0 bars")
+        d = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
         _add_open_question(d["id"])
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
@@ -215,25 +227,31 @@ class TestFreeze:
     def test_freeze_blocked_missing_entry(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
-        d = _make_draft(run, entry_rule=None, warmup_requirement="0 bars")
+        d = _make_draft(run, entry_rule=None, warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
         assert resp.status_code == 422
         assert "Entry" in resp.json()["detail"]
 
-    def test_freeze_blocked_missing_exit(self, client):
+    def test_freeze_system_default_exit(self, client):
+        """entry_exit ohne exit_rule → Systemdefault wird aufgelöst, Freeze erfolgreich."""
         src = _make_source()
         run = _make_extraction_run(src)
-        d = _make_draft(run, exit_rule=None, warmup_requirement="0 bars")
+        d = _make_draft(run, exit_rule=None, warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
-        assert resp.status_code == 422
-        assert "Exit" in resp.json()["detail"]
+        assert resp.status_code == 201
+        assert "10" in resp.json()["snapshot"]["exit_rule"]
+        assert "Bars" in resp.json()["snapshot"]["exit_rule"]
+        assert resp.json()["snapshot"]["exit_rule_origin"] == "system_default"
 
     def test_freeze_blocked_missing_warmup(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
-        d = _make_draft(run, warmup_requirement=None)
+        d = _make_draft(run, warmup_requirement=None, position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
         assert resp.status_code == 422
@@ -242,7 +260,8 @@ class TestFreeze:
     def test_freeze_blocked_not_entwurf(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
-        d = _make_draft(run, status="nicht testbar", warmup_requirement="0 bars")
+        d = _make_draft(run, status="nicht testbar", warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
         assert resp.status_code == 422
@@ -250,7 +269,8 @@ class TestFreeze:
     def test_frozen_version_is_appended_not_mutated(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
-        d = _make_draft(run, warmup_requirement="0 bars")
+        d = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
         _add_parameter(d["id"], "period", "14")
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
@@ -303,7 +323,8 @@ class TestListVersions:
     def test_list_versions(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
-        d = _make_draft(run, warmup_requirement="0 bars")
+        d = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
         client.post(f"/drafts/{d['id']}/freeze")
 
         resp = client.get(f"/drafts/{d['id']}/versions")
@@ -322,7 +343,8 @@ class TestGetVersion:
     def test_get_version_with_diff(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
-        d = _make_draft(run, warmup_requirement="0 bars")
+        d = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
         _add_parameter(d["id"], "period", "20", is_proposal=False)
         freeze_resp = client.post(f"/drafts/{d['id']}/freeze")
         version_id = freeze_resp.json()["id"]
@@ -344,7 +366,8 @@ class TestNewDraftFromVersion:
     def test_new_draft_from_version(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
-        d = _make_draft(run, warmup_requirement="0 bars")
+        d = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
         _add_parameter(d["id"], "period", "14")
         freeze_resp = client.post(f"/drafts/{d['id']}/freeze")
         version_id = freeze_resp.json()["id"]
@@ -356,6 +379,10 @@ class TestNewDraftFromVersion:
         assert data["family_id"] == d["family_id"]
         assert data["status"] == "Entwurf"
         assert len(data["parameters"]) == 1
+        assert data["position_mode"] == "entry_exit"
+        assert data["position_mode_confirmed"] is True
+        assert data["mts_compatibility"] == "discrete"
+        assert data["mts_confirmed"] is True
 
         # Verify parent_version_id is set
         draft = run_query_one(
@@ -366,3 +393,186 @@ class TestNewDraftFromVersion:
     def test_404_missing_version(self, client):
         resp = client.post("/versions/00000000-0000-0000-0000-000000000000/new-draft")
         assert resp.status_code == 404
+
+
+class TestProj10FreezeGates:
+    def test_freeze_blocked_missing_position_mode_confirmation(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=False, mts_compatibility="discrete", mts_confirmed=True)
+
+        resp = client.post(f"/drafts/{d['id']}/freeze")
+        assert resp.status_code == 422
+        assert "Positionsmodus" in resp.json()["detail"]
+
+    def test_freeze_blocked_missing_mts_confirmation(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=False)
+
+        resp = client.post(f"/drafts/{d['id']}/freeze")
+        assert resp.status_code == 422
+        assert "Crypto-MTS" in resp.json()["detail"]
+
+    def test_freeze_blocked_missing_exit_citation_for_source_origin(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run, exit_rule="RSI < 70", warmup_requirement="0 bars", position_mode="entry_exit",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
+        # original_snapshot must match current exit_rule so resolver keeps 'source'
+        run_command(
+            "UPDATE strategy_drafts SET exit_rule_origin = %s, original_snapshot = %s WHERE id = %s",
+            ["source", '{"name":"KI-Name","exit_rule":"RSI < 70"}', d["id"]],
+        )
+
+        resp = client.post(f"/drafts/{d['id']}/freeze")
+        assert resp.status_code == 422
+        assert "Quellenbeleg" in resp.json()["detail"]
+
+    def test_freeze_signal_reversal_blocks_without_exit(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run, exit_rule=None, warmup_requirement="0 bars", position_mode="signal_reversal",
+                        position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
+
+        resp = client.post(f"/drafts/{d['id']}/freeze")
+        assert resp.status_code == 422
+        assert "Exit" in resp.json()["detail"]
+
+
+class TestProj10PatchFields:
+    def test_patch_position_mode(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run)
+
+        resp = client.patch(f"/drafts/{d['id']}", json={"position_mode": "entry_exit"})
+        assert resp.status_code == 200
+        assert resp.json()["position_mode"] == "entry_exit"
+        assert resp.json()["position_mode_confirmed"] is False
+
+    def test_patch_position_mode_confirm(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run)
+
+        client.patch(f"/drafts/{d['id']}", json={"position_mode": "entry_exit"})
+        resp = client.patch(f"/drafts/{d['id']}", json={"position_mode_confirmed": True})
+        assert resp.status_code == 200
+        assert resp.json()["position_mode"] == "entry_exit"
+        assert resp.json()["position_mode_confirmed"] is True
+
+    def test_patch_position_mode_invalid(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run)
+
+        resp = client.patch(f"/drafts/{d['id']}", json={"position_mode": "invalid"})
+        assert resp.status_code == 422
+
+    def test_patch_mts_compatibility(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run)
+
+        resp = client.patch(f"/drafts/{d['id']}", json={"mts_compatibility": "continuous"})
+        assert resp.status_code == 200
+        assert resp.json()["mts_compatibility"] == "continuous"
+        assert resp.json()["mts_confirmed"] is False
+
+    def test_patch_mts_confirm(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run)
+
+        client.patch(f"/drafts/{d['id']}", json={"mts_compatibility": "continuous"})
+        resp = client.patch(f"/drafts/{d['id']}", json={"mts_confirmed": True})
+        assert resp.status_code == 200
+        assert resp.json()["mts_confirmed"] is True
+
+    def test_patch_mts_invalid(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run)
+
+        resp = client.patch(f"/drafts/{d['id']}", json={"mts_compatibility": "invalid"})
+        assert resp.status_code == 422
+
+    def test_patch_changes_position_mode_resets_confirmation(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run, position_mode="entry_exit", position_mode_confirmed=True)
+
+        resp = client.patch(f"/drafts/{d['id']}", json={"position_mode": "signal_reversal"})
+        assert resp.status_code == 200
+        assert resp.json()["position_mode"] == "signal_reversal"
+        assert resp.json()["position_mode_confirmed"] is False
+
+    def test_patch_changes_mts_resets_confirmation(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run, mts_compatibility="discrete", mts_confirmed=True)
+
+        resp = client.patch(f"/drafts/{d['id']}", json={"mts_compatibility": "continuous"})
+        assert resp.status_code == 200
+        assert resp.json()["mts_compatibility"] == "continuous"
+        assert resp.json()["mts_confirmed"] is False
+
+
+class TestProj10ExitResolver:
+    def test_entry_exit_with_user_exit_sets_origin_user(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run)
+
+        client.patch(f"/drafts/{d['id']}", json={
+            "position_mode": "entry_exit",
+            "exit_rule": "Benutzerdefinierter Exit"
+        })
+        resp = client.get(f"/drafts/{d['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["exit_rule_origin"] == "user"
+
+    def test_entry_exit_with_source_exit_preserves_origin(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run, exit_rule="RSI < 70")
+
+        run_command(
+            "INSERT INTO draft_source_citations (draft_id, rule_field, excerpt) VALUES (%s, %s, %s)",
+            [d["id"], "exit_rule", "Warte bis RSI fällt unter 70"],
+        )
+        run_command(
+            "UPDATE strategy_drafts SET original_snapshot = %s WHERE id = %s",
+            ['{"name":"KI-Name","exit_rule":"RSI < 70"}', d["id"]],
+        )
+
+        client.patch(f"/drafts/{d['id']}", json={"position_mode": "entry_exit"})
+        resp = client.get(f"/drafts/{d['id']}")
+        assert resp.status_code == 200
+        assert resp.json()["exit_rule_origin"] == "source"
+
+    def test_entry_exit_without_exit_applies_system_default(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run, exit_rule=None)
+
+        client.patch(f"/drafts/{d['id']}", json={"position_mode": "entry_exit"})
+        resp = client.get(f"/drafts/{d['id']}")
+        assert resp.status_code == 200
+        assert "10" in resp.json()["exit_rule"]
+        assert "vollständig" in resp.json()["exit_rule"]
+        assert resp.json()["exit_rule_origin"] == "system_default"
+
+    def test_signal_reversal_preserves_exit(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run, exit_rule="Gegensignal schließt Position")
+
+        client.patch(f"/drafts/{d['id']}", json={"position_mode": "signal_reversal"})
+        resp = client.get(f"/drafts/{d['id']}")
+        assert resp.status_code == 200
+        assert "Gegensignal" in resp.json()["exit_rule"]
+        assert resp.json()["exit_rule_origin"] is not None

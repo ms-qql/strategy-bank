@@ -54,6 +54,11 @@ class DraftRead(BaseModel):
     created_at: datetime
     family_id: UUID | None = None
     parent_version_id: UUID | None = None
+    position_mode: str | None = None
+    position_mode_confirmed: bool = False
+    exit_rule_origin: str | None = None
+    mts_compatibility: str | None = None
+    mts_confirmed: bool = False
     parameters: list[ParameterRead] = []
     citations: list[CitationRead] = []
     open_questions: list[OpenQuestionRead] = []

@@ -25,6 +25,10 @@ class DraftUpdate(BaseModel):
     reversal_behavior: str | None = None
     status_reason: str | None = None
     parameters: list[ParameterEdit] | None = None
+    position_mode: str | None = None
+    position_mode_confirmed: bool | None = None
+    mts_compatibility: str | None = None
+    mts_confirmed: bool | None = None
 
 
 class MarkUntestableRequest(BaseModel):

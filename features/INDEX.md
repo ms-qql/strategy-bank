@@ -13,7 +13,7 @@
 | PROJ-7 | Ergebnisvergleich | Planned | P0 | PROJ-6 |
 | PROJ-8 | Audit-Trail | Architected | P0 | PROJ-3, PROJ-4, PROJ-5 |
 | PROJ-9 | Markdown-Export | Planned | P1 | PROJ-8 |
-| PROJ-10 | Positions-, Exit- und Crypto-MTS-Kompatibilitätsmodell | Approved | P0 | PROJ-2, PROJ-3 |
+| PROJ-10 | Positions-, Exit- und Crypto-MTS-Kompatibilitätsmodell | In Progress | P0 | PROJ-2, PROJ-3 |
 
 **Empfohlene Build-Reihenfolge:** PROJ-1 → PROJ-2 → PROJ-3 → PROJ-4 → PROJ-5 → PROJ-8 → PROJ-10 → PROJ-6 → PROJ-7. PROJ-9 folgt als P1.
 
