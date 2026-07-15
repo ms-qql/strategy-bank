@@ -220,5 +220,11 @@ Next.js 16 (App Router) + shadcn/ui (`base-nova`, neutral) in `nextjs_app/`. Erw
 - **Regression:** 37/37 Backend-Tests, Next.js-Lint und Production-Build grün.
 - **Offen:** BUG-3 (Provider-Fehlertext) bleibt High; Status daher weiter **In Review** und Production Ready **NO**.
 
+### Re-QA nach BUG-3-Fix (2026-07-15)
+
+- **BUG-3 resolved:** Provider- und Parserdetails werden weder persistiert noch geloggt oder im Frontend angezeigt. Fehlgeschlagene Läufe enthalten ausschließlich „Extraktion konnte nicht abgeschlossen werden.“.
+- **Regression:** Der Test simuliert `api_key=super-secret` und bestätigt, dass der Wert nicht in `error_message` erscheint.
+- **Production Ready:** **YES** — keine offenen Critical- oder High-Bugs.
+
 ## Deployment
 _To be added by /deploy_

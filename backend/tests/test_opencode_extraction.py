@@ -139,8 +139,11 @@ def test_execute_extraction_marks_keine_treffer(monkeypatch):
     assert source_row["extraction_status"] == "extrahiert, keine Treffer"
 
 
-def test_execute_extraction_marks_failed_on_bad_json(monkeypatch):
-    monkeypatch.setattr(svc, "run_opencode", lambda prompt: "Ich kann diese Quelle nicht lesen.")
+def test_execute_extraction_hides_provider_error_details(monkeypatch):
+    def _provider_error(_prompt):
+        raise RuntimeError("api_key=super-secret")
+
+    monkeypatch.setattr(svc, "run_opencode", _provider_error)
 
     source = run_command(
         "INSERT INTO sources (content, source_hash, source_type) VALUES (%s, %s, 'text') RETURNING id",
@@ -158,6 +161,7 @@ def test_execute_extraction_marks_failed_on_bad_json(monkeypatch):
 
     run_row = run_query_one("SELECT status, error_message FROM extraction_runs WHERE id = %s", [run["id"]])
     assert run_row["status"] == "fehlgeschlagen"
-    assert run_row["error_message"]
+    assert run_row["error_message"] == "Extraktion konnte nicht abgeschlossen werden."
+    assert "super-secret" not in run_row["error_message"]
     source_row = run_query_one("SELECT extraction_status FROM sources WHERE id = %s", [source["id"]])
     assert source_row["extraction_status"] == "Extraktion fehlgeschlagen"

@@ -228,10 +228,10 @@ def _normalize_strategy(raw: dict) -> dict:
     }
 
 
-def _mark_failed(run_id: UUID, source_id: UUID, message: str) -> None:
+def _mark_failed(run_id: UUID, source_id: UUID, _message: str) -> None:
     run_command(
         "UPDATE extraction_runs SET status = 'fehlgeschlagen', finished_at = %s, error_message = %s WHERE id = %s",
-        [datetime.now(timezone.utc), message[:2000], run_id],
+        [datetime.now(timezone.utc), "Extraktion konnte nicht abgeschlossen werden.", run_id],
     )
     run_command(
         "UPDATE sources SET extraction_status = 'Extraktion fehlgeschlagen' WHERE id = %s",
