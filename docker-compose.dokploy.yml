@@ -34,6 +34,8 @@ services:
       context: ./nextjs_app
       args:
         BACKEND_URL: http://strategy-bank-api:8000
+    environment:
+      HOSTNAME: 0.0.0.0
     depends_on:
       - strategy-bank-api
     expose:
