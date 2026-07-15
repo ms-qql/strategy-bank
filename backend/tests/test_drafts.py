@@ -318,6 +318,18 @@ class TestMarkUntestable:
         resp = client.post(f"/drafts/{d['id']}/mark-untestable", json={"reason": "X"})
         assert resp.status_code == 422
 
+    def test_mark_draft_restores_untestable_draft(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run, status="nicht testbar")
+
+        resp = client.post(f"/drafts/{d['id']}/mark-draft")
+        assert resp.status_code == 204
+
+        draft = run_query_one("SELECT status, status_reason FROM strategy_drafts WHERE id = %s", [d["id"]])
+        assert draft["status"] == "Entwurf"
+        assert draft["status_reason"] is None
+
 
 class TestListVersions:
     def test_list_versions(self, client):

@@ -209,4 +209,4 @@ Status-Codes wie gewohnt: 200/201/204 Erfolg, 404 Draft nicht gefunden, 422 Vali
 - **Recommendation:** Deploy. Backend + Frontend TypeScript build bestehen beide ohne Fehler. 62 pytest + 25 draft-spezifische Tests = 87 automatisierte Tests. Keine Critical oder High bugs.
 
 ## Deployment
-**Deployed:** 2026-07-15 · **URL:** https://strategybank.smartinvestai.de/
+**Deployed:** 2026-07-15 · **URL:** https://strategybank.smartinvestai.de/ · **Version:** v0.2.0 · **Stack:** Next.js standalone + FastAPI + PostgreSQL 16 auf Dokploy

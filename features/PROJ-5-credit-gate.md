@@ -1,6 +1,6 @@
 # PROJ-5: Credit-Gate
 
-## Status: Architected
+## Status: Deployed
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -196,4 +196,4 @@ Der bestehende Confirm-Endpunkt bleibt die einzige Bestätigungsgrenze. Es entst
 - **Recommendation:** Deploy. Low bug is defensive code, not triggered by current API.
 
 ## Deployment
-_To be added by /deploy_
+__Deployed 2026-07-15__ / **Version:** v0.2.0 / **Stack:** Next.js standalone + FastAPI + PostgreSQL 16 auf Dokploy

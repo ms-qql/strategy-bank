@@ -1,6 +1,6 @@
 # PROJ-10: Positions-, Exit- und Crypto-MTS-Kompatibilitätsmodell
 
-## Status: Architected
+## Status: Deployed
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 

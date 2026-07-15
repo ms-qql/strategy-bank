@@ -292,14 +292,16 @@ export default function EntwurfEditPage() {
 
       if (Object.keys(body).length === 0) {
         setSuccess("Keine Änderungen.");
-        return;
+        return true;
       }
 
       await apiPatch(`/drafts/${draftId}`, body);
       setSuccess("Gespeichert.");
       await loadDraft();
+      return true;
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -318,6 +320,7 @@ export default function EntwurfEditPage() {
     setFreezeLoading(true);
     setFreezeError(null);
     try {
+      if (!(await handleSave())) return;
       await apiPostJson(`/drafts/${draftId}/freeze`, {});
       await loadDraft();
       setSuccess("Version freigegeben.");
@@ -340,6 +343,17 @@ export default function EntwurfEditPage() {
       setError(e instanceof ApiError ? e.message : "Markierung fehlgeschlagen.");
     } finally {
       setMarkLoading(false);
+    }
+  };
+
+  const handleMarkDraft = async () => {
+    setError(null);
+    try {
+      await apiPostJson(`/drafts/${draftId}/mark-draft`, {});
+      await loadDraft();
+      setSuccess("Als Entwurf fortgesetzt.");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Status konnte nicht geändert werden.");
     }
   };
 
@@ -1195,6 +1209,11 @@ export default function EntwurfEditPage() {
             )}
 
             <div className="flex flex-wrap gap-3">
+              {draft.status !== "Entwurf" && (
+                <Button variant="outline" onClick={handleMarkDraft}>
+                  Als Entwurf fortsetzen
+                </Button>
+              )}
               <Button onClick={handleFreeze} disabled={!canFreeze || freezeLoading}>
                 {freezeLoading && <Loader className="mr-1 h-4 w-4 animate-spin" />}
                 Version freigeben
