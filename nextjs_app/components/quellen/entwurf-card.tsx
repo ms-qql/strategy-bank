@@ -1,7 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { TriangleAlert, BookOpen, Pencil } from "lucide-react";
+import { useState } from "react";
+import { TriangleAlert, BookOpen, Pencil, Trash2 } from "lucide-react";
+import { apiDelete, ApiError } from "@/lib/api-client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -73,17 +75,28 @@ interface Props {
 
 export function EntwurfCard({ draft }: Props) {
   const router = useRouter();
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const deleteDraft = async () => {
+    if (!confirm(`Entwurf „${draft.name}“ wirklich löschen?`)) return;
+    try {
+      await apiDelete(`/drafts/${draft.id}`);
+      window.location.reload();
+    } catch (e) {
+      setDeleteError(e instanceof ApiError ? e.message : "Entwurf konnte nicht gelöscht werden.");
+    }
+  };
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 text-sm">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+        <div className="min-w-0 flex-1">
           <h4 className="text-base font-medium leading-tight">{draft.name} · v{draft.version}</h4>
           {draft.thesis && (
             <p className="mt-1 text-muted-foreground">{draft.thesis}</p>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
           <Badge variant="outline">{draft.category}</Badge>
           <Badge variant="outline">{DIRECTION_LABEL[draft.direction]}</Badge>
           <Badge variant={STATUS_VARIANT[draft.status]}>{draft.status}</Badge>
@@ -95,8 +108,19 @@ export function EntwurfCard({ draft }: Props) {
             <Pencil className="mr-1 h-3.5 w-3.5" />
             Entwurf bearbeiten
           </Button>
+          {draft.status !== "freigegeben" && (
+            <Button variant="destructive" size="sm" onClick={deleteDraft} aria-label={`Entwurf ${draft.name} löschen`}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </header>
+
+      {deleteError && (
+        <Alert variant="destructive" className="mt-3">
+          <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      )}
 
       {draft.status_reason && (
         <Alert variant="destructive" className="mt-3">

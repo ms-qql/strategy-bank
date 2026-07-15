@@ -1,6 +1,6 @@
 # PROJ-8: Audit-Trail
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -209,4 +209,7 @@ Keine.
 - **Recommendation:** Deploy — keine Blocker. Deferred ACs werden bei PROJ-6/7-Implementierung automatisch erfüllt.
 
 ## Deployment
-_To be added by /deploy_
+**Date:** 2026-07-15
+**Version:** v0.2.4
+**Branch:** main (via dev merge)
+**URL:** https://strategy-bank.dokploy.dev

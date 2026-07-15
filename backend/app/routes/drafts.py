@@ -128,6 +128,16 @@ def close_open_question(draft_id: UUID, question_id: UUID) -> None:
     run_command("DELETE FROM draft_open_questions WHERE id = %s", [question_id])
 
 
+@router.delete("/drafts/{draft_id}", status_code=204)
+def delete_draft(draft_id: UUID) -> None:
+    draft = run_query_one("SELECT status FROM strategy_drafts WHERE id = %s", [draft_id])
+    if not draft:
+        raise HTTPException(404, "Entwurf nicht gefunden.")
+    if draft["status"] == "freigegeben":
+        raise HTTPException(422, "Freigegebene Strategien können nicht gelöscht werden.")
+    run_command("DELETE FROM strategy_drafts WHERE id = %s", [draft_id])
+
+
 @router.post("/drafts/{draft_id}/freeze", response_model=VersionRead, status_code=201)
 def freeze_draft(draft_id: UUID) -> dict:
     draft = run_query_one(

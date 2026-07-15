@@ -279,4 +279,4 @@ Next.js 16 (App Router) + shadcn/ui in `nextjs_app/` frisch gescaffoldet (erstes
 - **Recommendation:** Deploy-fähig. BUG-3/BUG-4 in späterem Sprint aufgreifen.
 
 ## Deployment
-__Deployed 2026-07-15__ / **Version:** v0.2.0 / **Stack:** Next.js standalone + FastAPI + PostgreSQL 16 auf Dokploy
+**Deployed:** 2026-07-15 · **URL:** https://strategybank.smartinvestai.de/ · **Version:** v0.2.0 · **Stack:** Next.js standalone + FastAPI + PostgreSQL 16 auf Dokploy

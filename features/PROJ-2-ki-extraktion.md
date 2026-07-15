@@ -227,4 +227,4 @@ Next.js 16 (App Router) + shadcn/ui (`base-nova`, neutral) in `nextjs_app/`. Erw
 - **Production Ready:** **YES** — keine offenen Critical- oder High-Bugs.
 
 ## Deployment
-__Deployed 2026-07-15__ / **Version:** v0.2.0 / **Stack:** Next.js standalone + FastAPI + PostgreSQL 16 auf Dokploy
+**Deployed:** 2026-07-15 · **URL:** https://strategybank.smartinvestai.de/ · **Version:** v0.2.0 · **Stack:** Next.js standalone + FastAPI + PostgreSQL 16 auf Dokploy

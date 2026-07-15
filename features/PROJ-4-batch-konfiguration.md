@@ -359,4 +359,4 @@ freigegeben, Holdout bereits verbraucht, Batch bereits bestätigt und trotzdem e
 Alle Akzeptanzkriterien bestehen nach dem Nachtest. Status auf **Approved** gesetzt.
 
 ## Deployment
-__Deployed 2026-07-15__ / **Version:** v0.2.0 / **Stack:** Next.js standalone + FastAPI + PostgreSQL 16 auf Dokploy
+**Deployed:** 2026-07-15 · **URL:** https://strategybank.smartinvestai.de/ · **Version:** v0.2.0 · **Stack:** Next.js standalone + FastAPI + PostgreSQL 16 auf Dokploy
