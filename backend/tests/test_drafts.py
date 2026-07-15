@@ -176,6 +176,27 @@ class TestCloseOpenQuestion:
         assert resp.status_code == 404
 
 
+class TestDeleteDraft:
+    def test_delete_non_released_draft(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run)
+        _add_parameter(d["id"], "period", "14")
+
+        resp = client.delete(f"/drafts/{d['id']}")
+        assert resp.status_code == 204
+        assert run_query_one("SELECT id FROM strategy_drafts WHERE id = %s", [d["id"]]) is None
+        assert run_query("SELECT * FROM draft_parameters WHERE draft_id = %s", [d["id"]]) == []
+
+    def test_cannot_delete_released_draft(self, client):
+        src = _make_source()
+        run = _make_extraction_run(src)
+        d = _make_draft(run, status="freigegeben")
+
+        resp = client.delete(f"/drafts/{d['id']}")
+        assert resp.status_code == 422
+
+
 class TestFreeze:
     def test_freeze_creates_version(self, client):
         src = _make_source()
