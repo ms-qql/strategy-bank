@@ -1,6 +1,6 @@
 # PROJ-4: Batch-Konfiguration
 
-## Status: Architected
+## Status: In Progress
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -155,6 +155,29 @@ freigegeben, Holdout bereits verbraucht, Batch bereits bestätigt und trotzdem e
 - Tests: Kartesisches-Produkt-Vorschau, Bestätigen sperrt Batch/Runs, Profiländerung nach
   Nutzung erzeugt neue Version statt Überschreiben, Holdout-Gate vor Freigabe blockiert,
   Holdout-„bereits verwendet"-Markierung nach erster Nutzung.
+
+## Implementation Notes (Backend)
+**Umgesetzt:** 2026-07-15
+
+- `backend/sql/005_batch_konfiguration.sql`: `backtest_profiles` (append-only, gleiches
+  Muster wie `strategy_versions`), `batches`, `batch_instruments`,
+  `batch_strategy_versions`, `batch_direction_modes`, `runs`, `family_holdout_status`.
+  Angewendet auf `strategy_bank`- und `strategy_bank_test`-DB.
+- `backend/app/routes/batches.py` + `backend/app/schemas/batches.py`: alle Endpunkte aus
+  dem Tech Design (`/backtest-profiles`, `/batches`, `/batches/{id}/preview`,
+  `/batches/{id}/confirm`, `/strategy-versions/{id}/holdout-batch`,
+  `/strategy-versions/{id}/forward-test-batch`, `/strategy-versions/{id}/holdout-status`).
+- Abweichung vom Tech Design: Der 422-Hinweis „Holdout erst nach Freigabe der Version
+  verfügbar" ist Frontend-Sache (Button-Disable anhand `draft.status`) — der Endpunkt
+  selbst ist bereits über `strategy_version_id` an eine freigegebene Version gebunden,
+  ein nicht existierender Wert liefert generisch 404 „Version nicht gefunden."
+- Holdout-Verbrauch wird direkt beim Anlegen des Holdout-Batches markiert
+  (`family_holdout_status.consumed_at`), nicht erst bei dessen Bestätigung — einfacher,
+  ein einziger Schreibpunkt statt Interaktion zwischen Anlage und Bestätigung.
+- 12 pytest-Tests in `backend/tests/test_batches.py`: Profil-Versionierung (keine
+  Überschreibung), Batch-Vorschau als Kartesisches Produkt, Bestätigen sperrt/materialisiert
+  Runs, Holdout-Gate + „bereits verwendet"-Markierung, Forward-Test mit offenem Ende.
+  Komplette Suite (`backend/tests`): 74 passed.
 
 ## QA Test Results
 _To be added by /qa_

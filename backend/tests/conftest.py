@@ -23,7 +23,9 @@ def _clean_db():
     run_command(
         "TRUNCATE sources, extraction_runs, strategy_drafts, "
         "draft_parameters, draft_source_citations, draft_open_questions, "
-        "strategy_versions, version_parameters CASCADE"
+        "strategy_versions, version_parameters, "
+        "backtest_profiles, batches, batch_instruments, batch_strategy_versions, "
+        "batch_direction_modes, runs, family_holdout_status CASCADE"
     )
     yield
 
