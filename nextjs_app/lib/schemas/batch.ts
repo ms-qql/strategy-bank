@@ -91,3 +91,58 @@ export const holdoutStatusSchema = z.object({
   consumed_at: z.string().nullable(),
 });
 export type HoldoutStatus = z.infer<typeof holdoutStatusSchema>;
+
+export const RUN_STATUSES = [
+  "geplant",
+  "bestätigt",
+  "in_queue",
+  "läuft",
+  "erfolgreich",
+  "fehlgeschlagen",
+  "abgebrochen",
+] as const;
+export type RunStatus = (typeof RUN_STATUSES)[number];
+
+const backtestMetricsSchema = z.object({
+  netProfitPct: z.number().optional(),
+  profitFactor: z.number().optional(),
+  sharpeRatio: z.number().nullable().optional(),
+  sortinoRatio: z.number().nullable().optional(),
+  maxDrawdownPct: z.number().optional(),
+  winRatePct: z.number().optional(),
+  tradeCount: z.number().int().optional(),
+});
+
+export const runReadSchema = z.object({
+  id: z.string(),
+  batch_id: z.string(),
+  strategy_version_id: z.string(),
+  provider_symbol: z.string(),
+  direction_mode: z.string(),
+  run_kind: z.string(),
+  status: z.enum(RUN_STATUSES),
+  error_message: z.string().nullable().optional(),
+  error_category: z.string().nullable().optional(),
+  backtest_metrics: backtestMetricsSchema.nullable().optional(),
+  backtest_job_id: z.string().nullable().optional(),
+  created_at: z.string(),
+  started_at: z.string().nullable().optional(),
+  completed_at: z.string().nullable().optional(),
+});
+export type RunRead = z.infer<typeof runReadSchema>;
+
+export const runSummarySchema = z.object({
+  total: z.number().int(),
+  erfolgreich: z.number().int(),
+  fehlgeschlagen: z.number().int(),
+  offen: z.number().int(),
+  abgebrochen: z.number().int(),
+});
+export type RunSummary = z.infer<typeof runSummarySchema>;
+
+export const batchRunsResponseSchema = z.object({
+  batch_status: z.string(),
+  runs: z.array(runReadSchema),
+  summary: runSummarySchema,
+});
+export type BatchRunsResponse = z.infer<typeof batchRunsResponseSchema>;

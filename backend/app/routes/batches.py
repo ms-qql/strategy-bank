@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
@@ -18,6 +19,7 @@ from ..schemas.batches import (
     BatchConfirmIn,
     BatchCreate,
     BatchRead,
+    BatchRunsResponse,
     BatchUpdate,
     CreditStatus,
     HoldoutBatchCreate,
@@ -340,7 +342,10 @@ def get_credit_check(batch_id: UUID) -> dict:
 
 @router.post("/batches/{batch_id}/confirm", response_model=BatchRead, status_code=201)
 def confirm_batch(batch_id: UUID, body: BatchConfirmIn) -> dict:
-    batch = run_query_one("SELECT id, status, run_kind FROM batches WHERE id = %s", [batch_id])
+    batch = run_query_one(
+        "SELECT id, status, run_kind, backtest_profile_id, timeframe, period_start, period_end FROM batches WHERE id = %s",
+        [batch_id],
+    )
     if not batch:
         raise HTTPException(404, "Batch nicht gefunden.")
     if batch["status"] != "entwurf":
@@ -369,6 +374,22 @@ def confirm_batch(batch_id: UUID, body: BatchConfirmIn) -> dict:
             f"{planned_actions} benötigt — es fehlen {planned_actions - credit_balance}.",
         )
 
+    strategy_data: dict[str, dict] = {}
+    for sv_id in strategy_version_ids:
+        sv = run_query_one("SELECT * FROM strategy_versions WHERE id = %s", [sv_id])
+        params = run_query(
+            "SELECT name, value, unit, allowed_range FROM version_parameters WHERE version_id = %s",
+            [sv_id],
+        )
+        strategy_data[str(sv_id)] = {
+            "version": sv,
+            "parameters": params,
+        }
+
+    profile = run_query_one(
+        "SELECT * FROM backtest_profiles WHERE id = %s", [batch["backtest_profile_id"]],
+    )
+
     now = datetime.now(timezone.utc)
     with transaction() as cur:
         cur.execute(
@@ -394,8 +415,38 @@ def confirm_batch(batch_id: UUID, body: BatchConfirmIn) -> dict:
                         """
                         INSERT INTO runs (batch_id, strategy_version_id, provider_symbol, direction_mode, run_kind)
                         VALUES (%s, %s, %s, %s, %s)
+                        RETURNING id
                         """,
                         [batch_id, sv_id, instr["provider_symbol"], mode, batch["run_kind"]],
+                    )
+                    run_id = cur.fetchone()["id"]
+                    cur.execute(
+                        """
+                        INSERT INTO run_audits (
+                            run_id, batch_id, strategy_snapshot, profile_snapshot,
+                            provider_symbol, timeframe, period_start, period_end,
+                            direction_mode, run_kind,
+                            credit_max, credit_balance, credit_remaining,
+                            credit_tier, credit_reset, credit_checked_at
+                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        [
+                            run_id, batch_id,
+                            json.dumps(strategy_data[str(sv_id)], ensure_ascii=False, default=str),
+                            json.dumps(profile, ensure_ascii=False, default=str),
+                            instr["provider_symbol"],
+                            batch["timeframe"],
+                            batch["period_start"],
+                            batch["period_end"],
+                            mode,
+                            batch["run_kind"],
+                            body.credit_max,
+                            credit_balance,
+                            credit_remaining,
+                            credits["tier"],
+                            credits["reset"],
+                            now,
+                        ],
                     )
 
     return _load_batch(batch_id)
@@ -480,3 +531,91 @@ def create_forward_test_batch(version_id: UUID, body: HoldoutBatchCreate) -> dic
         period_end=None,
         run_kind="forward_test",
     )
+
+
+# --- Queue / Ausführung (PROJ-6) ----------------------------------------
+
+PENDING_STATUSES = {"geplant", "bestätigt", "in_queue", "läuft"}
+TERMINAL_STATUSES = {"erfolgreich", "fehlgeschlagen", "abgebrochen"}
+
+
+def _enrich_run(row: dict) -> dict:
+    result: dict = {**row}
+    exec_id = row.get("backtest_execution_id")
+    if exec_id:
+        be = run_query_one(
+            "SELECT external_job_id, external_result_id, backtest_result FROM backtest_executions WHERE id = %s",
+            [exec_id],
+        )
+        if be:
+            if be.get("external_job_id"):
+                result["backtest_job_id"] = be["external_job_id"]
+            if be.get("backtest_result") and isinstance(be["backtest_result"], dict):
+                raw = be["backtest_result"]
+                result["backtest_metrics"] = {
+                    "net_profit_pct": raw.get("netProfitPct"),
+                    "profit_factor": raw.get("profitFactor"),
+                    "sharpe_ratio": raw.get("sharpeRatio"),
+                    "sortino_ratio": raw.get("sortinoRatio"),
+                    "max_drawdown_pct": raw.get("maxDrawdownPct"),
+                    "win_rate_pct": raw.get("winRatePct"),
+                    "trade_count": raw.get("tradeCount"),
+                }
+    return result
+
+
+def _build_run_summary(batch_id: UUID) -> dict:
+    rows = run_query(
+        "SELECT status, COUNT(*) AS cnt FROM runs WHERE batch_id = %s GROUP BY status",
+        [batch_id],
+    )
+    summary = {"total": 0, "erfolgreich": 0, "fehlgeschlagen": 0, "offen": 0, "abgebrochen": 0}
+    for r in rows:
+        cnt = int(r["cnt"])
+        summary["total"] += cnt
+        if r["status"] == "erfolgreich":
+            summary["erfolgreich"] = cnt
+        elif r["status"] == "fehlgeschlagen":
+            summary["fehlgeschlagen"] = cnt
+        elif r["status"] == "abgebrochen":
+            summary["abgebrochen"] = cnt
+        elif r["status"] in PENDING_STATUSES:
+            summary["offen"] += cnt
+    return summary
+
+
+@router.post("/batches/{batch_id}/start", response_model=dict)
+def start_batch(batch_id: UUID) -> dict:
+    batch = run_query_one("SELECT * FROM batches WHERE id = %s", [batch_id])
+    if not batch:
+        raise HTTPException(404, "Batch nicht gefunden.")
+    if batch["status"] != "bestätigt":
+        raise HTTPException(422, "Nur bestätigte Batches können gestartet werden.")
+
+    with transaction() as cur:
+        cur.execute(
+            "UPDATE runs SET status = 'bestätigt' WHERE batch_id = %s AND status = 'geplant'",
+            [batch_id],
+        )
+        cur.execute(
+            "UPDATE batches SET status = 'in_ausfuehrung' WHERE id = %s", [batch_id],
+        )
+
+    return {"status": "ok", "batch_id": str(batch_id)}
+
+
+@router.get("/batches/{batch_id}/runs", response_model=BatchRunsResponse)
+def get_batch_runs(batch_id: UUID) -> dict:
+    batch = run_query_one("SELECT * FROM batches WHERE id = %s", [batch_id])
+    if not batch:
+        raise HTTPException(404, "Batch nicht gefunden.")
+
+    rows = run_query("SELECT * FROM runs WHERE batch_id = %s ORDER BY created_at ASC", [batch_id])
+    runs = [_enrich_run(r) for r in rows]
+    summary = _build_run_summary(batch_id)
+
+    return {
+        "batch_status": batch["status"],
+        "runs": runs,
+        "summary": summary,
+    }

@@ -32,6 +32,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import BatchAusfuehrung from "@/components/ausfuehrung/batch-ausfuehrung";
 import {
   Table,
   TableBody,
@@ -885,6 +886,20 @@ function BatchesPageInner() {
           )}
         </CardContent>
       </Card>
+
+      {isConfirmed && (
+        <BatchAusfuehrung
+          batchId={batch!.id}
+          versions={versions}
+          creditMax={batch!.credit_max ?? 0}
+          creditBalance={batch!.credit_balance}
+          creditRemaining={batch!.credit_remaining}
+          creditTier={batch!.credit_tier}
+          creditReset={batch!.credit_reset}
+          creditCheckedAt={batch!.credit_checked_at}
+          onClose={() => {}}
+        />
+      )}
     </div>
   );
 }
