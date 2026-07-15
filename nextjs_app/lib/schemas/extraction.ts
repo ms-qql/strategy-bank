@@ -76,6 +76,11 @@ export const draftSchema = z.object({
   open_questions: z.array(openQuestionSchema),
   family_id: z.string().nullable(),
   parent_version_id: z.string().nullable(),
+  position_mode: z.enum(["signal_reversal", "entry_exit"]).nullable(),
+  position_mode_confirmed: z.boolean(),
+  exit_rule_origin: z.enum(["source", "system_default", "user"]).nullable(),
+  mts_compatibility: z.enum(["continuous", "discrete", "unclear"]).nullable(),
+  mts_confirmed: z.boolean(),
 });
 export type Draft = z.infer<typeof draftSchema>;
 

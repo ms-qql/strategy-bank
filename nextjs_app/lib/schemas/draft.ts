@@ -20,6 +20,10 @@ export const draftUpdateSchema = z.object({
   reversal_behavior: z.string().nullable().optional(),
   status_reason: z.string().nullable().optional(),
   parameters: z.array(parameterEditSchema).optional(),
+  position_mode: z.enum(["signal_reversal", "entry_exit"]).optional(),
+  position_mode_confirmed: z.boolean().optional(),
+  mts_compatibility: z.enum(["continuous", "discrete", "unclear"]).optional(),
+  mts_confirmed: z.boolean().optional(),
 });
 export type DraftUpdate = z.infer<typeof draftUpdateSchema>;
 

@@ -68,6 +68,46 @@ const DIRECTIONS = [
   { value: "short-only", label: "short only" },
 ];
 
+const POSITION_MODES = [
+  { value: "signal_reversal", label: "Stop-and-Reverse" },
+  { value: "entry_exit", label: "Entry mit Flat-Exit" },
+];
+
+const MTS_COMPATIBILITIES = [
+  { value: "continuous", label: "Kontinuierlich geeignet" },
+  { value: "discrete", label: "Diskret kompatibel" },
+  { value: "unclear", label: "Unklar" },
+];
+
+const EXIT_ORIGIN_LABEL: Record<string, string> = {
+  source: "Aus Quelle",
+  system_default: "Systemdefault",
+  user: "Vom Nutzer",
+};
+
+const EXIT_ORIGIN_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
+  source: "default",
+  system_default: "secondary",
+  user: "outline",
+};
+
+const SNAPSHOT_LABELS: Record<string, string> = {
+  name: "Name",
+  thesis: "These",
+  category: "Kategorie",
+  direction: "Richtung",
+  entry_rule: "Entry-Regel",
+  exit_rule: "Exit-Regel",
+  warmup_requirement: "Warm-up",
+  simultaneous_entry_exit_behavior: "Gleichzeitiger Entry/Exit",
+  reversal_behavior: "Reversal-Verhalten",
+  position_mode: "Positionsmodus",
+  position_mode_confirmed: "Positionsmodus bestätigt",
+  exit_rule_origin: "Exit-Herkunft",
+  mts_compatibility: "Crypto-MTS-Eignung",
+  mts_confirmed: "Crypto-MTS-Eignung bestätigt",
+};
+
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   Entwurf: "secondary",
   "nicht testbar": "destructive",
@@ -132,6 +172,13 @@ export default function EntwurfEditPage() {
     { name: string; value: string; unit: string | null; allowed_range: string | null; is_proposal: boolean }[]
   >([]);
 
+  // PROJ-10: Positionsmodus & MTS
+  const [positionMode, setPositionMode] = useState<string>("");
+  const [positionModeConfirmed, setPositionModeConfirmed] = useState(false);
+  const [exitRuleOrigin, setExitRuleOrigin] = useState<string | null>(null);
+  const [mtsCompatibility, setMtsCompatibility] = useState<string>("");
+  const [mtsConfirmed, setMtsConfirmed] = useState(false);
+
   // Versions
   const [versions, setVersions] = useState<VersionListItem[]>([]);
   const [viewingVersion, setViewingVersion] = useState<VersionRead | null>(null);
@@ -154,12 +201,16 @@ export default function EntwurfEditPage() {
   const hasEntry = (entryRule ?? "").trim().length > 0;
   const hasExit = (exitRule ?? "").trim().length > 0;
   const hasWarmup = warmup !== null && warmup !== undefined;
+  const pmConfirmed = positionModeConfirmed;
+  const mtsCConfirmed = mtsConfirmed;
   const canFreeze =
     draft?.status === "Entwurf" &&
     openQuestionCount === 0 &&
     hasEntry &&
     hasExit &&
-    hasWarmup;
+    hasWarmup &&
+    pmConfirmed &&
+    mtsCConfirmed;
 
   const loadDraft = useCallback(async () => {
     setLoading(true);
@@ -179,6 +230,11 @@ export default function EntwurfEditPage() {
       setParameters(
         d.parameters.map((p) => ({ ...p })),
       );
+      setPositionMode(d.position_mode ?? "");
+      setPositionModeConfirmed(d.position_mode_confirmed);
+      setExitRuleOrigin(d.exit_rule_origin);
+      setMtsCompatibility(d.mts_compatibility ?? "");
+      setMtsConfirmed(d.mts_confirmed);
 
       try {
         const v = z
@@ -217,6 +273,11 @@ export default function EntwurfEditPage() {
         body.simultaneous_entry_exit_behavior = simulBehavior || null;
       if ((reversalBehavior ?? "") !== (draft?.reversal_behavior ?? ""))
         body.reversal_behavior = reversalBehavior || null;
+
+      if ((positionMode ?? "") !== (draft?.position_mode ?? "")) body.position_mode = positionMode || null;
+      if (positionModeConfirmed !== draft?.position_mode_confirmed) body.position_mode_confirmed = positionModeConfirmed;
+      if ((mtsCompatibility ?? "") !== (draft?.mts_compatibility ?? "")) body.mts_compatibility = mtsCompatibility || null;
+      if (mtsConfirmed !== draft?.mts_confirmed) body.mts_confirmed = mtsConfirmed;
 
       const paramsChanged =
         JSON.stringify(parameters) !== JSON.stringify(draft?.parameters);
@@ -500,7 +561,14 @@ export default function EntwurfEditPage() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="exit_rule">Exit-Regel</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="exit_rule">Exit-Regel</Label>
+                {exitRuleOrigin && (
+                  <Badge variant={EXIT_ORIGIN_VARIANT[exitRuleOrigin] ?? "outline"} className="text-xs">
+                    {EXIT_ORIGIN_LABEL[exitRuleOrigin] ?? exitRuleOrigin}
+                  </Badge>
+                )}
+              </div>
               <Textarea
                 id="exit_rule"
                 value={exitRule ?? ""}
@@ -549,6 +617,113 @@ export default function EntwurfEditPage() {
                 {saving && <Loader className="mr-1 h-4 w-4 animate-spin" />}
                 Speichern
               </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* PROJ-10: Positionsmodus & Exit-Konfiguration */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Positionsmodus & Exit-Konfiguration</CardTitle>
+          <CardDescription>
+            Lege fest, wie Positionen verwaltet werden und woher die Exit-Regel stammt.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <SelectField
+              label="Positionsmodus"
+              value={positionMode || ""}
+              options={[
+                { value: "", label: "— noch nicht gewählt —" },
+                ...POSITION_MODES,
+              ]}
+              onChange={(v) => {
+                setPositionMode(v);
+                if (v !== draft?.position_mode) setPositionModeConfirmed(false);
+              }}
+              disabled={isReadOnly}
+            />
+            <Button
+              variant={positionModeConfirmed ? "default" : "outline"}
+              size="sm"
+              onClick={() => setPositionModeConfirmed(!positionModeConfirmed)}
+              disabled={isReadOnly || !positionMode}
+            >
+              {positionModeConfirmed && <Check className="mr-1 h-4 w-4" />}
+              {positionModeConfirmed ? "Bestätigt" : "Bestätigen"}
+            </Button>
+            {positionMode && (
+              <Badge variant="outline" className="ml-auto">
+                {POSITION_MODES.find((m) => m.value === positionMode)?.label ?? positionMode}
+              </Badge>
+            )}
+          </div>
+
+          {positionMode && (
+            <div className="flex items-center gap-3 rounded-md border border-border p-3">
+              <span className="text-sm font-medium text-muted-foreground">Wirksame Exit-Herkunft:</span>
+              {exitRuleOrigin ? (
+                <Badge variant={EXIT_ORIGIN_VARIANT[exitRuleOrigin] ?? "outline"}>
+                  {EXIT_ORIGIN_LABEL[exitRuleOrigin] ?? exitRuleOrigin}
+                </Badge>
+              ) : (
+                <span className="text-sm text-muted-foreground">Wird vom Server aufgelöst</span>
+              )}
+              {exitRuleOrigin === "system_default" && (
+                <span className="text-xs text-muted-foreground">
+                  Exit nach 10 vollständig vergangenen Bars
+                </span>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* PROJ-10: Crypto-MTS-Eignung */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Crypto-MTS-Eignung</CardTitle>
+          <CardDescription>
+            Bewerte, ob diese Strategie für den Crypto Market Timing Service geeignet ist.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <SelectField
+              label="Eignung"
+              value={mtsCompatibility || ""}
+              options={[
+                { value: "", label: "— noch nicht gewählt —" },
+                ...MTS_COMPATIBILITIES,
+              ]}
+              onChange={(v) => {
+                setMtsCompatibility(v);
+                if (v !== draft?.mts_compatibility) setMtsConfirmed(false);
+              }}
+              disabled={isReadOnly}
+            />
+            <Button
+              variant={mtsConfirmed ? "default" : "outline"}
+              size="sm"
+              onClick={() => setMtsConfirmed(!mtsConfirmed)}
+              disabled={isReadOnly || !mtsCompatibility}
+            >
+              {mtsConfirmed && <Check className="mr-1 h-4 w-4" />}
+              {mtsConfirmed ? "Bestätigt" : "Bestätigen"}
+            </Button>
+          </div>
+
+          {mtsCompatibility === "discrete" && (
+            <div className="rounded-md bg-muted/50 p-3">
+              <p className="text-sm font-medium">Diskrete Abbildung (Adapter):</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Long &#8594; +10 &nbsp;|&nbsp; Flat &#8594; 0 &nbsp;|&nbsp; Short &#8594; &minus;10
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Kein zusätzlicher Run nötig. Mathematisch identisch zum normalen 100-%-Backtest.
+              </p>
             </div>
           )}
         </CardContent>
@@ -791,11 +966,20 @@ export default function EntwurfEditPage() {
           <CardContent className="flex flex-col gap-4">
             <div className="grid gap-2 text-sm">
               {Object.entries(viewingVersion.snapshot).map(([key, val]) => {
-                if (key === "parameters" || val === null || val === "") return null;
+                if (key === "parameters" || val === null || val === "" || val === undefined) return null;
+                const label = SNAPSHOT_LABELS[key] ?? key;
+                const displayVal =
+                  key === "exit_rule_origin" && typeof val === "string"
+                    ? (EXIT_ORIGIN_LABEL[val] ?? val)
+                    : key === "position_mode" && typeof val === "string"
+                      ? (POSITION_MODES.find((m) => m.value === val)?.label ?? val)
+                      : key === "mts_compatibility" && typeof val === "string"
+                        ? (MTS_COMPATIBILITIES.find((m) => m.value === val)?.label ?? val)
+                        : String(val);
                 return (
                   <div key={key} className="flex gap-2">
-                    <span className="w-40 shrink-0 font-medium text-muted-foreground">{key}:</span>
-                    <span>{String(val)}</span>
+                    <span className="w-48 shrink-0 font-medium text-muted-foreground">{label}:</span>
+                    <span>{displayVal}</span>
                   </div>
                 );
               })}
@@ -983,6 +1167,22 @@ export default function EntwurfEditPage() {
                     <X className="h-4 w-4 text-destructive" />
                   )}
                   Warm-up gesetzt
+                </li>
+                <li className="flex items-center gap-2">
+                  {pmConfirmed ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <X className="h-4 w-4 text-destructive" />
+                  )}
+                  Positionsmodus bestätigt
+                </li>
+                <li className="flex items-center gap-2">
+                  {mtsCConfirmed ? (
+                    <Check className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <X className="h-4 w-4 text-destructive" />
+                  )}
+                  Crypto-MTS-Eignung bestätigt
                 </li>
               </ul>
             </div>
