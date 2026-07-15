@@ -1,6 +1,6 @@
 # PROJ-4: Batch-Konfiguration
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -359,4 +359,4 @@ freigegeben, Holdout bereits verbraucht, Batch bereits bestätigt und trotzdem e
 Alle Akzeptanzkriterien bestehen nach dem Nachtest. Status auf **Approved** gesetzt.
 
 ## Deployment
-_To be added by /deploy_
+__Deployed 2026-07-15__ / **Version:** v0.2.0 / **Stack:** Next.js standalone + FastAPI + PostgreSQL 16 auf Dokploy
