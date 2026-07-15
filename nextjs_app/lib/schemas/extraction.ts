@@ -12,6 +12,7 @@ const draftStatusSchema = z.enum([
   "Entwurf",
   "nicht testbar",
   "gesperrt (unvollständig)",
+  "freigegeben",
 ]);
 export type DraftStatus = z.infer<typeof draftStatusSchema>;
 
@@ -47,6 +48,7 @@ export const citationSchema = z.object({
 export type Citation = z.infer<typeof citationSchema>;
 
 export const openQuestionSchema = z.object({
+  id: z.string(),
   description: z.string(),
   reasoning: z.string(),
 });
@@ -72,6 +74,8 @@ export const draftSchema = z.object({
   parameters: z.array(parameterSchema),
   citations: z.array(citationSchema),
   open_questions: z.array(openQuestionSchema),
+  family_id: z.string().nullable(),
+  parent_version_id: z.string().nullable(),
 });
 export type Draft = z.infer<typeof draftSchema>;
 
