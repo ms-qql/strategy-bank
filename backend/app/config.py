@@ -1,5 +1,6 @@
 """Typisierte App-Konfiguration via pydantic-settings."""
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,7 +18,18 @@ class Settings(BaseSettings):
 
     source_max_bytes: int = 2 * 1024 * 1024  # 2 MB, siehe PROJ-1 Edge Cases
 
+    # CORS: Dev-Default fürs Next.js-Frontend (Port 3000). Prod via .env
+    # überschreiben (CSV-String, z. B. "https://app.example.com,https://www.example.com").
+    cors_allow_origins: list[str] = ["http://localhost:3000"]
+
     env: str = "development"
+
+    @field_validator("cors_allow_origins", mode="before")
+    @classmethod
+    def _split_csv(cls, v: object) -> object:
+        if isinstance(v, str):
+            return [s.strip() for s in v.split(",") if s.strip()]
+        return v
 
 
 settings = Settings()  # type: ignore[call-arg]
