@@ -80,6 +80,26 @@ class BatchRead(BaseModel):
     strategy_version_ids: list[UUID]
     instruments: list[InstrumentRead]
     direction_modes: list[str]
+    credit_max: int | None = None
+    credit_balance: int | None = None
+    credit_remaining: int | None = None
+    credit_tier: str | None = None
+    credit_reset: str | None = None
+    credit_checked_at: datetime | None = None
+
+
+class BatchConfirmIn(BaseModel):
+    credit_max: int = Field(ge=1)
+
+
+class CreditStatus(BaseModel):
+    planned_actions: int
+    credit_balance: int
+    credit_remaining: int
+    tier: str
+    reset: str
+    blocked: bool
+    block_reason: str | None = None
 
 
 class PreviewRun(BaseModel):

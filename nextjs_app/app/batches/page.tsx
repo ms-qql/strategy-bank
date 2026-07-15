@@ -8,11 +8,13 @@ import { ArrowLeft, Check, Loader, Plus, TriangleAlert, X } from "lucide-react";
 import {
   backtestProfileSchema,
   batchSchema,
+  creditStatusSchema,
   previewRunSchema,
   versionSummarySchema,
   DIRECTION_MODES,
   type BacktestProfile,
   type Batch,
+  type CreditStatus,
   type Instrument,
   type PreviewRun,
   type VersionSummary,
@@ -147,15 +149,21 @@ function BatchesPageInner() {
   const [preview, setPreview] = useState<PreviewRun[]>([]);
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [creditMax, setCreditMax] = useState(0);
+  const [creditStatus, setCreditStatus] = useState<CreditStatus | null>(null);
+  const [creditLoading, setCreditLoading] = useState(false);
 
   const refreshPreview = useCallback(async (batchId: string) => {
     try {
       const p = z.array(previewRunSchema).parse(await apiGet<PreviewRun[]>(`/batches/${batchId}/preview`));
       setPreview(p);
+      if (p.length > 0 && creditMax === 0) {
+        setCreditMax(p.length);
+      }
     } catch {
       setPreview([]);
     }
-  }, []);
+  }, [creditMax]);
 
   const loadInitial = useCallback(async () => {
     setLoading(true);
@@ -282,12 +290,33 @@ function BatchesPageInner() {
     }
   };
 
+  const handleCreditCheck = async () => {
+    if (!batch) return;
+    setCreditLoading(true);
+    setError(null);
+    try {
+      const result = creditStatusSchema.parse(
+        await apiGet<CreditStatus>(`/batches/${batch.id}/credit-check`),
+      );
+      setCreditStatus(result);
+      if (creditMax < result.planned_actions) {
+        setCreditMax(result.planned_actions);
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Credit-Prüfung fehlgeschlagen.");
+    } finally {
+      setCreditLoading(false);
+    }
+  };
+
   const handleConfirm = async () => {
     if (!batch) return;
     setConfirming(true);
     setError(null);
     try {
-      const confirmed = batchSchema.parse(await apiPostJson<Batch>(`/batches/${batch.id}/confirm`, {}));
+      const confirmed = batchSchema.parse(
+        await apiPostJson<Batch>(`/batches/${batch.id}/confirm`, { credit_max: creditMax }),
+      );
       setBatch(confirmed);
       await refreshPreview(confirmed.id);
       setSuccess("Batch bestätigt — Runs sind angelegt.");
@@ -745,15 +774,111 @@ function BatchesPageInner() {
               </div>
 
               {!isConfirmed && (
-                <div className="flex justify-end">
-                  <Button
-                    variant="default"
-                    onClick={handleConfirm}
-                    disabled={confirming || preview.length === 0}
-                  >
-                    {confirming && <Loader className="mr-1 h-4 w-4 animate-spin" />}
-                    Batch bestätigen
-                  </Button>
+                <>
+                  <div className="rounded-md border border-border p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <p className="text-sm font-medium">Credit-Gate</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleCreditCheck}
+                        disabled={creditLoading}
+                      >
+                        {creditLoading && <Loader className="mr-1 h-3 w-3 animate-spin" />}
+                        Credits prüfen
+                      </Button>
+                    </div>
+
+                    {creditStatus && (
+                      <div className="grid gap-3 text-sm">
+                        <div className="flex flex-wrap gap-4">
+                          <div>
+                            <span className="text-muted-foreground">Geplante Aktionen:</span>{" "}
+                            <span className="font-mono font-medium">{creditStatus.planned_actions}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Guthaben:</span>{" "}
+                            <span className="font-mono font-medium">{creditStatus.credit_balance}</span>
+                          </div>
+                          <div>
+                            <span className="text-muted-foreground">Verbleibend:</span>{" "}
+                            <span
+                              className={`font-mono font-medium ${creditStatus.credit_remaining < 0 ? "text-red-600" : ""}`}
+                            >
+                              {creditStatus.credit_remaining}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                          <span>Tarif: {creditStatus.tier}</span>
+                          <span>Reset: {creditStatus.reset}</span>
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <Label>
+                            Max. Credits für diesen Batch
+                          </Label>
+                          <Input
+                            type="number"
+                            min={creditStatus.planned_actions}
+                            value={creditMax}
+                            onChange={(e) => setCreditMax(Number(e.target.value))}
+                            className="w-32 font-mono"
+                          />
+                        </div>
+
+                        {creditStatus.blocked && creditStatus.block_reason && (
+                          <Alert variant="destructive">
+                            <TriangleAlert aria-hidden="true" />
+                            <AlertDescription>{creditStatus.block_reason}</AlertDescription>
+                          </Alert>
+                        )}
+                      </div>
+                    )}
+
+                    {!creditStatus && !creditLoading && (
+                      <p className="text-sm text-muted-foreground">
+                        Credits vor dem Start prüfen, um den Verbrauch abzuschätzen.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      variant="default"
+                      onClick={handleConfirm}
+                      disabled={confirming || preview.length === 0 || !creditStatus || creditMax < preview.length}
+                    >
+                      {confirming && <Loader className="mr-1 h-4 w-4 animate-spin" />}
+                      Batch bestätigen
+                    </Button>
+                  </div>
+                </>
+              )}
+              {isConfirmed && batch.credit_balance != null && (
+                <div className="rounded-md border border-border p-4">
+                  <p className="mb-2 text-sm font-medium">Credit-Snapshot (bei Bestätigung)</p>
+                  <div className="grid gap-2 text-sm">
+                    <div className="flex flex-wrap gap-4">
+                      <span>
+                        <span className="text-muted-foreground">Max:</span>{" "}
+                        <span className="font-mono">{batch.credit_max}</span>
+                      </span>
+                      <span>
+                        <span className="text-muted-foreground">Guthaben:</span>{" "}
+                        <span className="font-mono">{batch.credit_balance}</span>
+                      </span>
+                      <span>
+                        <span className="text-muted-foreground">Verbleibend:</span>{" "}
+                        <span className="font-mono">{batch.credit_remaining}</span>
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
+                      <span>Tarif: {batch.credit_tier}</span>
+                      <span>Reset: {batch.credit_reset}</span>
+                      <span>Geprüft: {batch.credit_checked_at ? new Date(batch.credit_checked_at).toLocaleString("de-DE") : "-"}</span>
+                    </div>
+                  </div>
                 </div>
               )}
             </>

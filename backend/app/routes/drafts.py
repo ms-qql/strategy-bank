@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
-from ..constants import CATEGORIES, DIRECTIONS
+from ..constants import CATEGORIES, DIRECTIONS, MTS_COMPATIBILITIES, POSITION_MODES
 from ..db import run_command, run_query, run_query_one, transaction
 from ..schemas.drafts import (
     DraftUpdate,
@@ -14,6 +14,7 @@ from ..schemas.drafts import (
     VersionRead,
     VersionSummary,
 )
+from ..services.exit_resolver import resolve_exit
 
 router = APIRouter(tags=["drafts"])
 
@@ -44,13 +45,19 @@ def _compute_user_diff(original_snapshot: dict | None, version_snapshot: dict) -
 
 @router.patch("/drafts/{draft_id}")
 def update_draft(draft_id: UUID, body: DraftUpdate) -> dict:
-    draft = run_query_one("SELECT id, status FROM strategy_drafts WHERE id = %s", [draft_id])
+    draft = run_query_one(
+        """SELECT id, status, original_snapshot, exit_rule, exit_rule_origin,
+                  position_mode, position_mode_confirmed, mts_confirmed
+           FROM strategy_drafts WHERE id = %s""",
+        [draft_id],
+    )
     if not draft:
         raise HTTPException(404, "Entwurf nicht gefunden.")
     if draft["status"] in ("freigegeben",):
         raise HTTPException(422, "Bereits freigegebene Entwürfe können nicht bearbeitet werden.")
 
     update_fields: dict[str, object] = {}
+
     for field in _FIELD_NAMES:
         val = getattr(body, field, None)
         if val is not None:
@@ -59,8 +66,29 @@ def update_draft(draft_id: UUID, body: DraftUpdate) -> dict:
             if field == "direction" and val not in DIRECTIONS:
                 raise HTTPException(422, f"Ungültige Richtung: {val}")
             update_fields[field] = val
+
     if body.status_reason is not None:
         update_fields["status_reason"] = body.status_reason
+
+    if body.position_mode is not None:
+        if body.position_mode not in POSITION_MODES:
+            raise HTTPException(422, f"Ungültiger Positionsmodus: {body.position_mode}")
+        update_fields["position_mode"] = body.position_mode
+        if body.position_mode != draft.get("position_mode"):
+            update_fields["position_mode_confirmed"] = False
+
+    if body.position_mode_confirmed is not None:
+        update_fields["position_mode_confirmed"] = body.position_mode_confirmed
+
+    if body.mts_compatibility is not None:
+        if body.mts_compatibility not in MTS_COMPATIBILITIES:
+            raise HTTPException(422, f"Ungültige Crypto-MTS-Eignung: {body.mts_compatibility}")
+        update_fields["mts_compatibility"] = body.mts_compatibility
+        if body.mts_compatibility != draft.get("mts_compatibility"):
+            update_fields["mts_confirmed"] = False
+
+    if body.mts_confirmed is not None:
+        update_fields["mts_confirmed"] = body.mts_confirmed
 
     if update_fields:
         set_clause = ", ".join(f"{k} = %s" for k in update_fields)
@@ -80,6 +108,8 @@ def update_draft(draft_id: UUID, body: DraftUpdate) -> dict:
                     """,
                     [draft_id, p.name, p.value, p.unit, p.allowed_range],
                 )
+
+    _resolve_and_persist_exit(draft_id)
 
     return _load_draft(draft_id)
 
@@ -102,7 +132,9 @@ def close_open_question(draft_id: UUID, question_id: UUID) -> None:
 def freeze_draft(draft_id: UUID) -> dict:
     draft = run_query_one(
         """
-        SELECT id, family_id, status, entry_rule, exit_rule, warmup_requirement
+        SELECT id, family_id, status, entry_rule, exit_rule, warmup_requirement,
+               position_mode, position_mode_confirmed, exit_rule_origin,
+               mts_compatibility, mts_confirmed
         FROM strategy_drafts WHERE id = %s
         """,
         [draft_id],
@@ -121,10 +153,42 @@ def freeze_draft(draft_id: UUID) -> dict:
 
     if not (draft.get("entry_rule") and str(draft["entry_rule"]).strip()):
         raise HTTPException(422, "Freigabe nicht möglich — Entry-Regel fehlt.")
+
+    if not draft.get("position_mode_confirmed"):
+        raise HTTPException(422, "Positionsmodus muss vor der Freigabe bestätigt werden.")
+
+    _resolve_and_persist_exit(draft_id)
+    draft = run_query_one(
+        """
+        SELECT id, family_id, status, entry_rule, exit_rule, warmup_requirement,
+               position_mode, position_mode_confirmed, exit_rule_origin,
+               mts_compatibility, mts_confirmed
+        FROM strategy_drafts WHERE id = %s
+        """,
+        [draft_id],
+    )
+    assert draft is not None
+
     if not (draft.get("exit_rule") and str(draft["exit_rule"]).strip()):
         raise HTTPException(422, "Freigabe nicht möglich — Exit-Regel fehlt.")
+
+    if draft["exit_rule_origin"] == "source":
+        citations = run_query(
+            "SELECT rule_field, excerpt FROM draft_source_citations WHERE draft_id = %s",
+            [draft_id],
+        )
+        has_exit_citation = any(
+            c["rule_field"] == "exit_rule" and (c.get("excerpt") or "").strip()
+            for c in citations
+        )
+        if not has_exit_citation:
+            raise HTTPException(422, "Freigabe nicht möglich — Quellenbeleg für Exit-Regel fehlt.")
+
     if draft.get("warmup_requirement") is None:
         raise HTTPException(422, "Freigabe nicht möglich — Warm-up-Anforderung muss explizit gesetzt sein.")
+
+    if not draft.get("mts_confirmed"):
+        raise HTTPException(422, "Crypto-MTS-Eignung muss vor der Freigabe bestätigt werden.")
 
     family_id = draft["family_id"]
 
@@ -134,6 +198,8 @@ def freeze_draft(draft_id: UUID) -> dict:
                sd.entry_rule, sd.exit_rule, sd.warmup_requirement,
                sd.simultaneous_entry_exit_behavior, sd.reversal_behavior,
                sd.status, sd.status_reason, sd.original_snapshot,
+               sd.position_mode, sd.position_mode_confirmed, sd.exit_rule_origin,
+               sd.mts_compatibility, sd.mts_confirmed,
                er.source_id, sd.source_hash, er.model, er.prompt_version
         FROM strategy_drafts sd
         JOIN extraction_runs er ON er.id = sd.extraction_run_id
@@ -159,6 +225,11 @@ def freeze_draft(draft_id: UUID) -> dict:
         "warmup_requirement": full["warmup_requirement"],
         "simultaneous_entry_exit_behavior": full["simultaneous_entry_exit_behavior"],
         "reversal_behavior": full["reversal_behavior"],
+        "position_mode": full["position_mode"],
+        "position_mode_confirmed": full["position_mode_confirmed"],
+        "exit_rule_origin": full["exit_rule_origin"],
+        "mts_compatibility": full["mts_compatibility"],
+        "mts_confirmed": full["mts_confirmed"],
     }
     parameters = run_query(
         "SELECT name, value, unit, allowed_range FROM draft_parameters WHERE draft_id = %s",
@@ -262,8 +333,10 @@ def new_draft_from_version(version_id: UUID) -> dict:
             name, thesis, category, direction,
             entry_rule, exit_rule, warmup_requirement,
             simultaneous_entry_exit_behavior, reversal_behavior,
-            status
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            status,
+            position_mode, position_mode_confirmed, exit_rule_origin,
+            mts_compatibility, mts_confirmed
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         [
             new_id,
@@ -282,6 +355,11 @@ def new_draft_from_version(version_id: UUID) -> dict:
             snap.get("simultaneous_entry_exit_behavior"),
             snap.get("reversal_behavior"),
             "Entwurf",
+            snap.get("position_mode"),
+            snap.get("position_mode_confirmed", False),
+            snap.get("exit_rule_origin"),
+            snap.get("mts_compatibility"),
+            snap.get("mts_confirmed", False),
         ],
     )
 
@@ -373,7 +451,9 @@ def _load_draft(draft_id: UUID) -> dict:
         """
         SELECT id, extraction_run_id, source_hash, version, name, thesis, category, direction,
                entry_rule, exit_rule, warmup_requirement, simultaneous_entry_exit_behavior,
-               reversal_behavior, status, status_reason, created_at, family_id, parent_version_id
+               reversal_behavior, status, status_reason, created_at, family_id, parent_version_id,
+               position_mode, position_mode_confirmed, exit_rule_origin,
+               mts_compatibility, mts_confirmed
         FROM strategy_drafts WHERE id = %s
         """,
         [draft_id],
@@ -399,3 +479,35 @@ def _load_draft(draft_id: UUID) -> dict:
         "citations": [CitationRead(**c) for c in citations],
         "open_questions": [OpenQuestionRead(**q) for q in open_questions],
     }
+
+
+def _resolve_and_persist_exit(draft_id: UUID) -> None:
+    draft = run_query_one(
+        """SELECT position_mode, exit_rule, exit_rule_origin, original_snapshot
+           FROM strategy_drafts WHERE id = %s""",
+        [draft_id],
+    )
+    if not draft:
+        return
+
+    original_snapshot = draft.get("original_snapshot")
+    if isinstance(original_snapshot, str):
+        original_snapshot = json.loads(original_snapshot)
+
+    citations = run_query(
+        "SELECT rule_field, excerpt FROM draft_source_citations WHERE draft_id = %s",
+        [draft_id],
+    )
+
+    effective_exit, effective_origin = resolve_exit(
+        position_mode=draft.get("position_mode"),
+        current_exit_rule=draft.get("exit_rule"),
+        original_snapshot=original_snapshot,
+        citations=citations,
+        current_exit_rule_origin=draft.get("exit_rule_origin"),
+    )
+
+    run_command(
+        "UPDATE strategy_drafts SET exit_rule = %s, exit_rule_origin = %s WHERE id = %s",
+        [effective_exit, effective_origin, draft_id],
+    )

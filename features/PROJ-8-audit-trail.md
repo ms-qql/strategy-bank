@@ -1,6 +1,6 @@
 # PROJ-8: Audit-Trail
 
-## Status: Planned
+## Status: Architected
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -8,6 +8,7 @@
 - Requires: PROJ-3 (Verifizierung und Versionierung) — liefert die unveränderlichen Strategieversionen als Referenz.
 - Requires: PROJ-4 (Batch-Konfiguration) — liefert Backtest-Profil und geplante Runs.
 - Requires: PROJ-5 (Credit-Gate) — liefert Credit-Maximum und Kontostand-Snapshot.
+- Extended by: PROJ-10 (Positions-, Exit- und Crypto-MTS-Kompatibilitätsmodell) — ergänzt reproduktionsrelevante Felder im Strategieversions-Snapshot, ohne eine harte Laufzeitabhängigkeit zu erzeugen.
 
 Die zu speichernden externen trader.dev-Metadaten stammen verbindlich aus `docs/trader-dev-capability-spike.md`. PROJ-6 schreibt seine Laufzeitdaten anschließend in diese persistente Grundlage.
 
@@ -18,6 +19,7 @@ Die zu speichernden externen trader.dev-Metadaten stammen verbindlich aus `docs/
 
 ## Acceptance Criteria
 - [ ] Jeder Run referenziert dauerhaft und unveränderlich: die eingefrorene Strategieversion, das vollständige Backtest-Profil, Instrument-ID/Timeframe/Zeitraum, Richtungsmodus, Agent-Runtime und Modell, Prompt-/Executor-Version, die verwendete trader.dev-MCP-Aktion (`run_backtest`/`quick_backtest`), verfügbare Engine- und Datenstand-Angaben, Start-, End- und Erstellungszeitpunkt sowie externen Report-Link und rohe strukturierte Antwort (sofern verfügbar).
+- [ ] Für PROJ-10-Versionen zeigt der Audit-Trail zusätzlich den bestätigten Positionsmodus, die vollständig aufgelöste Exit-Regel samt Herkunft und Parametern sowie die Crypto-MTS-Eignung aus dem eingefrorenen Strategie-Snapshot.
 - [ ] Änderungen an einer Strategie (neue Version) überschreiben keine historischen Run-Datensätze; alte Runs bleiben unverändert einsehbar und weiterhin ihrer ursprünglichen Version zugeordnet.
 - [ ] Jeder Audit-Trail-Eintrag ist von der Ergebnisansicht (PROJ-7) aus für den jeweiligen Run direkt aufrufbar.
 - [ ] Für jeden Run ist erkennbar, ob es sich um Research-, historisches Holdout- oder echtes Forward-Ergebnis handelt (Herkunft aus PROJ-4).
@@ -28,6 +30,7 @@ Die zu speichernden externen trader.dev-Metadaten stammen verbindlich aus `docs/
 - Zwei Runs teilen sich dieselbe Strategieversion, aber unterschiedliche Backtest-Profile: jeder Run hat einen eigenständigen, vollständigen Audit-Trail-Eintrag, kein gemeinsames „geteiltes" Profilobjekt, das sich rückwirkend ändern könnte.
 - Prozessneustart während eines laufenden Runs: nach Fortsetzung (PROJ-6) wird der Audit-Trail nachträglich um End-/Erstellungszeitpunkt vervollständigt, nicht rückwirkend verändert vor dem tatsächlichen Ereignis.
 - Export eines Runs ohne Report-Link (siehe PROJ-7 „unvollständig"): Audit-Trail zeigt das Fehlen explizit statt eines Platzhalter-Links.
+- Eine vor PROJ-10 eingefrorene Legacy-Version enthält die neuen Positions-/Exit-/Crypto-MTS-Felder nicht: Der Audit-Trail zeigt „Nicht verfügbar — Legacy-Version“ und ergänzt keine nachträglich geratenen Werte.
 
 ## Technical Requirements (optional)
 - Persistenz: append-only für Run-bezogene Audit-Daten, keine UPDATE-Operationen auf bereits abgeschlossene Runs außer dem einmaligen Nachtragen von End-/Erstellungszeitpunkt bei Prozessfortsetzung.
@@ -36,7 +39,97 @@ Die zu speichernden externen trader.dev-Metadaten stammen verbindlich aus `docs/
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+**Erstellt:** 2026-07-15 · **Stack:** Next.js 16 (App Router) + shadcn/ui / FastAPI + raw SQL / PostgreSQL · **Branch:** dev
+
+### A) Komponentenstruktur (UI)
+
+```text
+ErgebnisvergleichPage (PROJ-7)
+└── Ergebniszeile
+    └── „Audit-Trail ansehen“ → /runs/{id}/audit
+
+RunAuditPage (neu, ausschließlich lesend)
+├── RunKopf (Status, Auswertungsart, Instrument, Richtung, Zeitstempel)
+├── StrategieSnapshot (Version, Regeln, Parameter, Herkunft sowie PROJ-10-Positionsmodus, Exit-Herkunft und Crypto-MTS-Eignung)
+├── BacktestKonfiguration (vollständiges Profil, Timeframe und Zeitraum)
+├── Ausfuehrungsdetails (Agent-Runtime, Modell, Prompt-/Executor-Version, MCP-Aktion)
+├── ProviderMetadaten (Engine-/Datenstand, sofern von trader.dev geliefert)
+└── ExterneArtefakte
+    ├── ReportLink oder „Report-Link nicht verfügbar“
+    └── Rohantwort oder „Rohantwort nicht verfügbar“
+```
+
+Die Detailseite hat keine Bearbeitungsaktionen. Sie zeigt fehlende optionale
+Provider-Angaben ausdrücklich als nicht verfügbar und unterscheidet Research,
+historischen Holdout und echten Forward-Test mit demselben Run-Typ wie PROJ-4/7.
+
+### B) Datenmodell (Klartext)
+
+```text
+run_audits (NEU, genau ein eigenständiger Eintrag je Run)
+  - Referenz auf den bestehenden Run und seinen bestätigten Batch
+  - vollständiger Snapshot der eingefrorenen Strategieversion einschließlich Parameter und vorhandener PROJ-10-Felder
+  - vollständiger Snapshot der verwendeten Backtest-Profilversion
+  - Provider-Symbol, Timeframe, Zeitraum, Richtungsmodus und Auswertungsart
+  - Credit-Maximum und Kontostand-Snapshot aus PROJ-5
+  - Agent-Runtime, Modell, Prompt-Version und Executor-Version
+  - verwendete trader.dev-MCP-Aktion
+  - externe Job-/Ergebnis-ID sowie optionale Engine- und Datenstand-Angaben
+  - erstellt, gestartet und beendet; jeder Zeitpunkt wird nur einmal gesetzt
+  - externer Report-Link, sofern geliefert
+  - rohe strukturierte trader.dev-Antwort, sofern geliefert
+  - expliziter Verfügbarkeitsstatus für Report-Link und Rohantwort
+  - finalisiert_at: ab diesem Zeitpunkt vollständig gegen Änderung und Löschung gesperrt
+```
+
+Der Audit-Eintrag entsteht zusammen mit dem Run bei der Batch-Bestätigung. Dadurch
+sind Strategie, Profil, Run-Konfiguration und Credit-Snapshot bereits vor der
+externen Ausführung gesichert. PROJ-6 ergänzt Job-ID, Runtime-Daten und Zeitpunkte
+nur beim tatsächlichen Ereignis und finalisiert den Eintrag beim terminalen
+Run-Status. Ein Prozessneustart kann ausschließlich noch nicht gesetzte Felder
+nachtragen; bereits gespeicherte Werte werden nie ersetzt.
+
+Die vorhandene `runs`-Tabelle bleibt Quelle für Queue-Status und Idempotency-Key.
+`run_audits` kopiert nur die für eine dauerhaft eigenständige Reproduktion nötigen
+Fakten. So bleibt ein alter Audit-Trail vollständig, selbst wenn später neue
+Strategie- oder Profilversionen entstehen. Gespeichert wird in PostgreSQL; Dateien
+fallen nicht an, daher wird MinIO nicht benötigt.
+
+Bei Legacy-Snapshots bleiben fehlende PROJ-10-Felder leer und werden in der UI
+als „Nicht verfügbar — Legacy-Version“ erklärt; sie werden nicht rekonstruiert.
+
+### C) API-Form (nur Endpunkte)
+
+```text
+GET /runs/{id}/audit
+    → liefert den vollständigen, nur lesbaren Audit-Trail des Runs
+```
+
+Es gibt keinen öffentlichen POST-, PATCH- oder DELETE-Endpunkt für Audit-Daten.
+Anlage, einmaliges Ergänzen und Finalisierung erfolgen ausschließlich innerhalb
+der bestehenden serverseitigen Bestätigungs- und Ausführungsabläufe aus PROJ-5/6.
+PROJ-7 verlinkt die Detailansicht direkt über die Run-ID.
+
+### D) Tech-Entscheidungen (warum)
+
+- **Ein vollständiger Snapshot pro Run:** Unveränderliche Referenzen allein wären technisch ausreichend, aber kein eigenständiger Audit-Beleg. Der Snapshot hält exakt die damals sichtbaren Regeln, Parameter und Profileinstellungen zusammen und verhindert rückwirkende Abhängigkeiten.
+- **Eine Audit-Zeile statt eines zusätzlichen Event-Systems:** Das Feature verlangt Reproduzierbarkeit, keine allgemeine Ereignis-Timeline. Ein Datensatz mit einmalig gesetzten Lebenszyklusfeldern deckt den Bedarf mit weniger Datenmodell und UI ab.
+- **Früh anlegen, spät finalisieren:** Konfigurations- und Credit-Fakten werden bei Bestätigung gesichert; Laufzeitfakten können erst während PROJ-6 bekannt werden. Nach terminalem Status sperrt die Datenbank den gesamten Eintrag gegen Änderung und Löschung.
+- **Nur noch leere Felder ergänzen:** Start, Ende, externe IDs und Antworten dürfen jeweils nur einmal gesetzt werden. Das macht die Fortsetzung nach Prozessneustart sicher, ohne historische Tatsachen umzuschreiben.
+- **Expliziter Verfügbarkeitsstatus:** Ein fehlender Link oder eine fehlende Rohantwort ist eine fachliche Information und wird nicht als mehrdeutiges leeres Feld dargestellt.
+- **Rohe Antwort als strukturierter Wert:** trader.dev liefert strukturierte Daten; PostgreSQL bewahrt sie vollständig für spätere Nachprüfung, ohne schon heute jedes mögliche Provider-Feld in eigene Spalten zu zwingen.
+- **Kein eigener Schreib-Endpunkt:** Audit-Daten entstehen aus serverseitig bekannten Fakten. Ein öffentlicher Schreibpfad würde Manipulation ermöglichen, ohne einen Nutzerfall zu erfüllen.
+- **Keine Mandantenlogik:** Die bestehende App ist laut PRD eine Single-Trader-Anwendung ohne Mandant/RLS. Die vorhandene lokale Authentisierung schützt die Leseansicht wie den Rest der App.
+
+### E) Abhängigkeiten
+
+- Backend: keine neuen Python-Pakete; vorhandenes FastAPI, Pydantic und PostgreSQL/raw SQL genügen.
+- Frontend: keine neuen npm-Pakete; vorhandene shadcn/ui-Komponenten Card, Badge, Alert und Button genügen.
+- PROJ-3 liefert den unveränderlichen Strategieversions-Snapshot.
+- PROJ-4 liefert Profilversion, Run-Konfiguration und Auswertungsart.
+- PROJ-5 liefert den unveränderlichen Credit-Snapshot bei Bestätigung.
+- PROJ-10 erweitert den übernommenen Strategie-Snapshot um Positionsmodus, aufgelösten Exit-Vertrag und Crypto-MTS-Eignung; `run_audits` benötigt dafür keine zusätzlichen Felder oder Schreibpfade.
+- PROJ-6 ergänzt Laufzeit-, Provider- und Ergebnisdaten und finalisiert den Audit-Eintrag.
 
 ## QA Test Results
 _To be added by /qa_

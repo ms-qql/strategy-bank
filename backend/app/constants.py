@@ -31,3 +31,15 @@ DEFAULT_TIMEFRAME = "4h"
 DEFAULT_PERIOD_START = "2021-01-01"
 DEFAULT_PERIOD_END = "2024-12-31"
 HOLDOUT_PERIOD_START = "2025-01-01"
+
+# PROJ-10: Positions-, Exit- und Crypto-MTS-Kompatibilitätsmodell
+
+POSITION_MODES: list[str] = ["signal_reversal", "entry_exit"]
+
+EXIT_RULE_ORIGINS: list[str] = ["source", "system_default", "user"]
+
+MTS_COMPATIBILITIES: list[str] = ["continuous", "discrete", "unclear"]
+
+SYSTEM_DEFAULT_EXIT_RULE = "Exit nach 10 vollständig vergangenen Bars"
+
+SYSTEM_DEFAULT_EXIT_BARS = 10

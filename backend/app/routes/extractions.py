@@ -94,7 +94,9 @@ def get_extraction(run_id: UUID) -> dict:
         """
         SELECT id, extraction_run_id, source_hash, version, name, thesis, category, direction,
                entry_rule, exit_rule, warmup_requirement, simultaneous_entry_exit_behavior,
-               reversal_behavior, status, status_reason, created_at, family_id, parent_version_id
+               reversal_behavior, status, status_reason, created_at, family_id, parent_version_id,
+               position_mode, position_mode_confirmed, exit_rule_origin,
+               mts_compatibility, mts_confirmed
         FROM strategy_drafts WHERE extraction_run_id = %s ORDER BY created_at
         """,
         [run_id],
@@ -108,7 +110,9 @@ def get_draft(draft_id: UUID) -> dict:
         """
         SELECT id, extraction_run_id, source_hash, version, name, thesis, category, direction,
                entry_rule, exit_rule, warmup_requirement, simultaneous_entry_exit_behavior,
-               reversal_behavior, status, status_reason, created_at, family_id, parent_version_id
+               reversal_behavior, status, status_reason, created_at, family_id, parent_version_id,
+               position_mode, position_mode_confirmed, exit_rule_origin,
+               mts_compatibility, mts_confirmed
         FROM strategy_drafts WHERE id = %s
         """,
         [draft_id],
