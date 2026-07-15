@@ -1,6 +1,6 @@
 # PROJ-1: Quellenerfassung
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -279,4 +279,4 @@ Next.js 16 (App Router) + shadcn/ui in `nextjs_app/` frisch gescaffoldet (erstes
 - **Recommendation:** Deploy-fähig. BUG-3/BUG-4 in späterem Sprint aufgreifen.
 
 ## Deployment
-_To be added by /deploy_
+**Deployed:** 2026-07-15 · **URL:** https://strategybank.smartinvestai.de/

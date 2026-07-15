@@ -1,6 +1,6 @@
 # PROJ-2: KI-Extraktion
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -227,4 +227,4 @@ Next.js 16 (App Router) + shadcn/ui (`base-nova`, neutral) in `nextjs_app/`. Erw
 - **Production Ready:** **YES** — keine offenen Critical- oder High-Bugs.
 
 ## Deployment
-_To be added by /deploy_
+**Deployed:** 2026-07-15 · **URL:** https://strategybank.smartinvestai.de/
