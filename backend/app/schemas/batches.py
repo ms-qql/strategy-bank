@@ -108,6 +108,19 @@ class PreviewRun(BaseModel):
     direction_mode: str
 
 
+class BacktestMetrics(BaseModel):
+    """Extrahiert aus der trader.dev-Antwort. Alle Felder optional, da nicht
+    jeder Run Kennzahlen liefert (Null bei keinen Trades, nicht berechenbaren
+    Werten)."""
+    net_profit_pct: float | None = None
+    profit_factor: float | None = None
+    sharpe_ratio: float | None = None
+    sortino_ratio: float | None = None
+    max_drawdown_pct: float | None = None
+    win_rate_pct: float | None = None
+    trade_count: int | None = None
+
+
 class RunRead(BaseModel):
     id: UUID
     batch_id: UUID
@@ -116,7 +129,39 @@ class RunRead(BaseModel):
     direction_mode: str
     run_kind: str
     status: str
+    error_message: str | None = None
+    error_category: str | None = None
+    backtest_metrics: BacktestMetrics | None = None
+    backtest_job_id: str | None = None
     created_at: datetime
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class RunSummary(BaseModel):
+    total: int
+    erfolgreich: int
+    fehlgeschlagen: int
+    offen: int
+    abgebrochen: int
+
+
+class BatchRunsResponse(BaseModel):
+    batch_status: str
+    runs: list[RunRead]
+    summary: RunSummary
+
+
+class RetryCreditCheckResponse(BaseModel):
+    ok: bool
+    reason: str | None = None
+
+
+class RunCreate(BaseModel):
+    strategy_version_id: UUID
+    provider_symbol: str
+    direction_mode: str
+    run_kind: str = "standard"
 
 
 class HoldoutStatusRead(BaseModel):
