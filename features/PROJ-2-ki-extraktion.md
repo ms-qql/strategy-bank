@@ -1,6 +1,6 @@
 # PROJ-2: KI-Extraktion
 
-## Status: Planned
+## Status: In Progress (Backend done, Frontend offen)
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -113,6 +113,26 @@ Kein PATCH/Freigabe-Endpunkt hier — Bearbeiten und Freigabe-Gate gehören zu P
 - Backend (Python): FastAPI, `BackgroundTasks` (FastAPI-eigen, für den asynchronen Lauf), stdlib `subprocess` für den OpenCode-Prozessaufruf, Pydantic v2 zum Parsen/Validieren der KI-Ausgabe. Kein neues Drittanbieter-Package für den Kern.
 - Frontend (Next.js): `shadcn/ui` (Card, Badge, Table, Popover, Alert), bestehende `api-client.ts` erweitert um Extraction-/Draft-Endpunkte.
 - Security: OpenCode-API-Key ausschließlich als Server-Umgebungsvariable; nie im Frontend, im Prompt-Log oder in Fehlermeldungen sichtbar.
+
+## Backend-Implementierung (abc-backend, 2026-07-15)
+
+FastAPI-Backend in `backend/`, untracked im Working Tree (committed in `master` per Spec-Default, Spec-Branch-Feld sagt `main` — Inkonsistenz aus PROJ-1 übernommen, kein Branch-Switch nötig).
+
+**Neue/geänderte Dateien:**
+- `backend/sql/002_extraction.sql` — 5 Tabellen: `extraction_runs`, `strategy_drafts`, `draft_parameters`, `draft_source_citations`, `draft_open_questions` (jeweils FK-CASCADE, Indizes auf FK-Spalten, CHECK-Constraints für Status-Enums).
+- `backend/app/constants.py` — `CATEGORIES` (feste Liste), `FALLBACK_CATEGORY="Sonstige"`, `DIRECTIONS`.
+- `backend/app/config.py` — `opencode_binary`, `extraction_model`, `extraction_prompt_version`, `extraction_timeout_seconds` (300s, pydantic-settings).
+- `backend/app/schemas/extractions.py` — `ExtractionRunListItem`, `ExtractionRunDetail` (extends mit `drafts`), `DraftRead` (mit `parameters`/`citations`/`open_questions`), `ParameterRead`, `CitationRead`, `OpenQuestionRead`, `CategoryList`.
+- `backend/app/services/opencode_extraction.py` — `build_prompt` (de-DE Anweisungstext, erzwingt `{"strategies": []}` wenn nichts erkennbar), `run_opencode` (subprocess-Aufruf mit Timeout, parst OpenCode-Stream-Events, wirft `RuntimeError` bei Fehler/kein Text), `parse_model_output` (Codefence-Extraktion + Fallback auf größtes `{...}`-Fragment), `_normalize_strategy` (server-seitig: unbekannte Kategorie → `Sonstige`, fehlende entry/exit-rule → `gesperrt (unvollständig)`, `is_proposal=true` immer), `execute_extraction` (Background-Task: bei Parser-/Provider-Fehler Endstatus `fehlgeschlagen` ohne Retry).
+- `backend/app/routes/extractions.py` — `POST /sources/{id}/extractions` (201, Background-Task, setzt source auf `wird extrahiert`), `GET /sources/{id}/extractions`, `GET /extractions/{id}` (inkl. drafts), `GET /drafts/{id}`, `GET /categories`.
+- `backend/app/main.py` — Router-Registrierung, Exception-Handler für `InvalidTextRepresentation`→404, `ForeignKeyViolation`→422 (aus PROJ-1 übernommen, deckt auch UUID-Pfade in PROJ-2 ab).
+- `backend/tests/test_extractions.py` + `test_opencode_extraction.py` — 11 Tests: Happy-Path, fehlende Source, leere Läufe, Kategorie-Fallback, Gesperrt-Erkennung, Parameter-als-Vorschlag, keine-Treffer, Provider-Fehler.
+
+**Verifiziert:** 27/27 pytest grün (PROJ-1 + PROJ-2). Server bootet clean (`/health`, `/categories` korrekt). DB-Migrationen angewendet (6 Tabellen in `public`).
+
+**Offen (Frontend):** `ExtrahierenButton`, `ExtraktionStatusBadge`, `EntwuerfeSection` mit `EntwurfCard`/`RegelBlock`/`QuellenbelegPopover`/`ParameterTabelle`/`OffeneUnklarheitenListe` in `nextjs_app/components/quellen/` — gehört zu nächstem Schritt `/abc-frontend`.
+
+**Security:** OpenCode-Authentifizierung erfolgt über dessen globales Credential-Management (`~/.config/opencode`); die App übergibt nie einen API-Key und loggt nie den Prompt-Inhalt. Timeout verhindert hängende Background-Tasks. Kein Auto-Retry bei Provider-Fehler.
 
 ## QA Test Results
 _To be added by /qa_

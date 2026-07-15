@@ -1,6 +1,6 @@
 # PROJ-1: Quellenerfassung
 
-## Status: Planned
+## Status: In Progress
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -89,7 +89,27 @@ Kein Auth-Mandant; einfache lokale Single-User-Auth genügt (PRD §3). Validieru
 - Backend (Python): FastAPI, `python-multipart` (Datei-Upload), `psycopg`/DB-Zugriff via `run_query_m`/`run_command_m`, `pydantic` v2. SHA-256 aus stdlib `hashlib` — keine neue Dependency.
 - Frontend (Next.js): `shadcn/ui` (Tabs, Textarea, Table, Alert, Badge, Button), Zod + react-hook-form für Formvalidierung, `api-client.ts` (Fetch-Wrapper).
 
-## Frontend-Implementierung (abc-frontend, 2026-07-15)
+## Backend-Implementierung (abc-backend, 2026-07-15)
+
+FastAPI + raw SQL in `backend/`, single-user (kein Mandant/RLS laut PRD §3).
+
+**Dateien:**
+- `backend/sql/001_sources.sql` — `sources`-Tabelle: `id`, `content`, `source_hash`, `source_type` (`text`|`markdown_file`), `file_name`, `extraction_status` (Default „noch nicht extrahiert", PROJ-2-Enum vorhanden), `created_at`. Index auf `created_at DESC`.
+- `backend/app/schemas/sources.py` — `SourceListItem`, `SourceDetail` (Pydantic v2).
+- `backend/app/routes/sources.py` — `POST /sources` (multipart: `content` ODER `file`, niemals beides), `GET /sources` (neueste zuerst, `limit` 1–200), `GET /sources/{id}`.
+- `backend/app/main.py` — Router eingebunden, Exception-Handler für `InvalidTextRepresentation` (→ 404 „Nicht gefunden.") und `ForeignKeyViolation` (→ 422).
+- `backend/app/config.py` — `source_max_bytes` (Default 2 MB, aus `.env` überschreibbar).
+- `backend/tests/test_sources.py` — 10 Tests: Happy-Paths (Text + Datei), Validierung (leer/beides/falsche Endung/zu groß/UTF-8/Größenlimit-monkeypatch), List newest-first, GET 404.
+
+**Hash:** server-seitig `hashlib.sha256(raw_bytes).hexdigest()` über genau die persistierten Bytes.
+
+**Validierung (Trust-Boundary, Server verbindlich):** leer ↔ 400 „Quelle enthält keinen Inhalt.", beides ↔ 400 „nicht beides", falsche Endung ↔ 400 „Nur .md-Dateien", >2 MB ↔ 400 „Größenlimit", UTF-8-Fehler ↔ 400 „konnte nicht als Text gelesen".
+
+**Tests:** 27/27 grün (10× `test_sources.py`, 17× PROJ-2). Live-Smoke: POST Text + POST `.md` + GET-Liste + 400-/404-Pfade alle wie erwartet.
+
+**Branch:** main (siehe Tech-Design). Backend liegt aktuell untracked im Working Tree (`backend/` + `docker-compose.yml`).
+
+**Frontend-Implementierung (abc-frontend, 2026-07-15)**
 
 Next.js 16 (App Router) + shadcn/ui in `nextjs_app/` frisch gescaffoldet (erstes Feature, Repo war leer).
 

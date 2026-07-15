@@ -1,0 +1,32 @@
+import os
+import sys
+from pathlib import Path
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(BACKEND_DIR))
+
+# Vor jedem App-Import: Test-Datenbank statt Dev-Datenbank verwenden.
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql://strategy_bank:strategy_bank_dev@localhost:55433/strategy_bank_test",
+)
+
+import pytest  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.db import run_command  # noqa: E402
+from app.main import app  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _clean_db():
+    run_command(
+        "TRUNCATE sources, extraction_runs, strategy_drafts, "
+        "draft_parameters, draft_source_citations, draft_open_questions CASCADE"
+    )
+    yield
+
+
+@pytest.fixture
+def client():
+    return TestClient(app)

@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    container_name: strategy_bank_db
+    environment:
+      POSTGRES_DB: strategy_bank
+      POSTGRES_USER: strategy_bank
+      POSTGRES_PASSWORD: strategy_bank_dev
+    ports:
+      - "55433:5432"
+    volumes:
+      - strategy_bank_pgdata:/var/lib/postgresql/data
+
+volumes:
+  strategy_bank_pgdata:
