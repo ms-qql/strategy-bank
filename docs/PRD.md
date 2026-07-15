@@ -2,7 +2,7 @@
 
 **Status:** MVP-Spezifikation abgeschlossen
 **Erstellt:** 2026-07-15
-**Basis:** `docs/Brainstorm-strategy-bank-v2.md`, `docs/Brainstorm-strategy-bank-review.md`, `docs/trader-dev-capability-spike.md`
+**Basis:** `docs/Brainstorm-strategy-bank-v2.md`, `docs/Brainstorm-strategy-bank-review.md`, `docs/Brainstorm-entry-exit-modell.md`, `docs/trader-dev-capability-spike.md`
 
 ## 1. Vision
 
@@ -57,8 +57,9 @@ Aus einer Text-/Markdown-Quelle mindestens eine Strategie extrahieren, verifizie
 | PROJ-7 | Ergebnisvergleich | P0 |
 | PROJ-8 | Audit-Trail | P0 |
 | PROJ-9 | Markdown-Export | P1 |
+| PROJ-10 | Positions-, Exit- und Crypto-MTS-Kompatibilitätsmodell | P0 |
 
-Empfohlene Build-Reihenfolge: PROJ-1 → PROJ-2 → PROJ-3 → PROJ-4 → PROJ-5 → PROJ-8 → PROJ-6 → PROJ-7. PROJ-9 folgt als P1.
+Empfohlene Build-Reihenfolge: PROJ-1 → PROJ-2 → PROJ-3 → PROJ-4 → PROJ-5 → PROJ-8 → PROJ-10 → PROJ-6 → PROJ-7. PROJ-9 folgt als P1.
 
 ## 8. Erfolgsmetriken
 
@@ -76,6 +77,7 @@ Empfohlene Build-Reihenfolge: PROJ-1 → PROJ-2 → PROJ-3 → PROJ-4 → PROJ-5
 
 - PDF/OCR/Screenshot-Quellen, Web-Links, Multi-Upload.
 - Stop-Loss/Take-Profit/Trailing-Stops, Portfolio-Optimierung, Parameter-Sweeps.
+- Automatische kontinuierliche Crypto-MTS-Forecast-Transformation und Forecast-Backtests; im MVP wird nur die Eignung bewertet und die diskrete Abbildung `+10 / 0 / −10` definiert.
 - Composite Score, automatische Gewinner-Empfehlung.
 - Automatischer Provider-/Modell-Fallback, zweiter Agent-Provider.
 - Automatische Hal-Synchronisierung (nur lokaler Markdown-Export im MVP).
