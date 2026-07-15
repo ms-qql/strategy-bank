@@ -51,12 +51,12 @@ interface RuleProps {
 function RegelBlock({ field, label, text, citations }: RuleProps) {
   const relevant = citationsFor(field, citations);
   return (
-    <div className="flex flex-col gap-1">
+    <div className="min-w-0 flex flex-col gap-1">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
       {text ? (
-        <p className="font-mono text-sm">{text}</p>
+        <p className="wrap-break-word font-mono text-sm">{text}</p>
       ) : (
         <p className="text-sm italic text-muted-foreground">
           (in der Quelle nicht ableitbar)
@@ -106,7 +106,7 @@ export function EntwurfCard({ draft }: Props) {
         </Alert>
       )}
 
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <RegelBlock
           field="entry_rule"
           label="Entry"

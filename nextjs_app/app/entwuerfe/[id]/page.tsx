@@ -400,7 +400,7 @@ export default function EntwurfEditPage() {
   if (!draft) return null;
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-6">
+    <div className="mx-auto max-w-7xl px-6 py-6">
       {/* Navigation */}
       <Button variant="ghost" size="sm" className="mb-4" onClick={() => router.push("/quellen")}>
         <ArrowLeft className="mr-1 h-4 w-4" />
