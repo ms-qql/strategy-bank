@@ -153,7 +153,64 @@ Next.js 16 (App Router) + shadcn/ui (`base-nova`, neutral) in `nextjs_app/`. Erw
 **Verbleibend für PROJ-3:** Edit/Freigabe-Gate (PATCH-Endpoints, Versionsnummern, gesperrt-Status kann nur nach manueller Bestätigung aufgelöst werden). Die UI-Annotations- und Bearbeitungs-Workflow kommen mit dem nächsten Feature.
 
 ## QA Test Results
-_To be added by /qa_
+**Geprüft:** 2026-07-15 · **Branch:** main
+
+### Acceptance Criteria
+
+| Kriterium | Ergebnis | Nachweis |
+|---|---|---|
+| Genau ein konfigurierter OpenCode-Pfad, kein Fallback | PASS | `run_opencode` ruft ausschließlich `settings.opencode_binary` mit `settings.extraction_model` auf; kein zweiter Provider im Backend. |
+| Mehrere Strategien ergeben getrennte Entwürfe | FAIL | Backend persistiert mehrere Items, aber die UI bleibt nach dem Polling auf „Extraktion läuft“ und zeigt keine Entwürfe (BUG-1). |
+| Vollständiger Entwurf inkl. Strategie-ID, Versionsnummer und Quellenbelegen je Regel | FAIL | `strategy_drafts` und API-Schema enthalten keine Versionsnummer; Belege sind optional und werden nicht pro Regel validiert (BUG-2). |
+| Fehlende vorgeschlagene Werte sind als Vorschlag markiert | PASS | `_normalize_strategy` erzwingt `is_proposal=True`; durch `test_normalize_strategy_forces_parameters_as_proposal` abgedeckt. |
+| Diskretionäre Aussagen werden als offene Unklarheit erfasst | FAIL | Der Prompt fordert dies nur an; serverseitig wird weder eine offene Unklarheit noch „nicht testbar“ erzwungen (BUG-2). |
+| Keine Strategie erzeugt Hinweis und keine Entwürfe | FAIL | Backend liefert korrekt `keine Treffer`; die UI erreicht wegen BUG-1 den terminalen Zustand nicht. |
+| Jeder Entwurf startet als „Entwurf“ | PASS | Status-Default und Normalisierung setzen `Entwurf`; unvollständige Entry-/Exit-Regeln werden korrekt gesperrt. |
+| Modellwechsel betrifft nur künftige Extraktionen | PASS | Modell und Prompt-Version werden je `extraction_runs`-Datensatz persistiert; bestehende Entwürfe bleiben unverändert. |
+
+### Edge Cases und Regression
+
+- PASS: Keine Treffer, Provider-/Parser-Fehler, Kategorie-Fallback, gesperrter unvollständiger Entwurf und Parameter-Vorschläge sind durch die Backend-Tests abgedeckt.
+- PASS: Feste Kategorienliste ist serverseitig zentral und per `GET /categories` verfügbar.
+- PASS: 36/36 Backend-Tests (`python -m pytest`), Next.js-Lint und Production-Build.
+- NOT RUN: Live-OpenCode-Lauf wurde nicht ausgelöst, da er externe Modell-Credits verbraucht; Browser-/Responsive-Smoke kann wegen der blockierenden UI-Logik nicht erfolgreich abgeschlossen werden.
+
+### Security Audit
+
+- PASS: Solo-User-Architektur, daher kein JWT-/Mandanten-/RLS-Test erforderlich (PRD §3).
+- PASS: SQL-Parameterbindung via psycopg `%s`; React escaped gerenderte Quelleninhalte.
+- FAIL: Provider-Fehlertext wird bis zu 2.000 Zeichen in `error_message` gespeichert und im Frontend ausgegeben. Enthält ein Provider-Fehler Credentials oder interne Details, werden sie offengelegt (BUG-3).
+- PASS: Kein Auto-Retry; CORS-Whitelist und UUID-Fehlerbehandlung sind durch die Regressionstests abgedeckt.
+
+### Bugs Found
+
+#### BUG-1: Terminaler Extraktionsstatus wird im Frontend nicht übernommen
+- **Severity:** High
+- **Reproduktion:** Extraktion starten und auf einen terminalen Backend-Status warten (`abgeschlossen`, `keine Treffer` oder `fehlgeschlagen`).
+- **Expected:** Status-Badge und Detailbereich zeigen Entwürfe, „Keine Strategie …“ oder den Fehler mit Retry.
+- **Actual:** `schedulePoll` ersetzt nur `details`; `runs[0].status` bleibt `läuft`. `EntwuerfeSection` rendert deshalb dauerhaft den Ladezustand.
+- **Root Cause:** `nextjs_app/components/quellen/quellen-view.tsx`, `schedulePoll` aktualisiert `state.runs` und `sources` nicht.
+
+#### BUG-2: Kanonischer Entwurf erfüllt Mindestvertrag nicht
+- **Severity:** High
+- **Reproduktion:** Modellantwort ohne `version`, ohne Quellenbelege oder mit diskretionärer Regel wie „bei starkem Momentum einsteigen“ und leerem `open_questions` zurückgeben.
+- **Expected:** Versionsnummer und Belege je Regel sind vorhanden; diskretionäre Regel wird als offene Unklarheit/nicht testbar gespeichert.
+- **Actual:** Version ist in Migration, Schema und UI nicht vorhanden; Belege und offene Unklarheiten bleiben optional, die Regel kann als `Entwurf` persistieren.
+- **Root Cause:** Die Normalisierung erzwingt nur Entry-/Exit-Regeln und Vorschlags-Parameter, nicht den restlichen Mindestvertrag.
+
+#### BUG-3: Provider-Fehler kann in API und UI offengelegt werden
+- **Severity:** High
+- **Reproduktion:** OpenCode mit einem Fehlertext starten, der vertrauliche Provider-Details enthält.
+- **Expected:** Nutzer erhält eine generische Fehlermeldung; Detail bleibt ausschließlich serverseitig und bereinigt.
+- **Actual:** `run_opencode` übernimmt `stderr`, `_mark_failed` persistiert ihn, `GET /extractions/{id}` und die UI geben ihn aus.
+- **Root Cause:** Unbereinigte Exception-Texte werden als `error_message` gespeichert und gerendert.
+
+### Summary
+
+- **Acceptance Criteria:** 4/8 passed, 4/8 failed.
+- **Bugs:** 3 High, 0 Critical, 0 Medium, 0 Low.
+- **Production Ready:** **NO** — High-Bugs blockieren die Kernanzeige, den Entwurfsvertrag und den Secret-Schutz.
+- **Status:** bleibt **In Review**.
 
 ## Deployment
 _To be added by /deploy_
