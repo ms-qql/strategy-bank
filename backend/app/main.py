@@ -10,7 +10,9 @@ from .config import settings
 from .routes import audit as audit_routes
 from .routes import batches as batch_routes
 from .routes import drafts as draft_routes
+from .routes import export as export_routes
 from .routes import extractions as extraction_routes
+from .routes import results as result_routes
 from .routes import runs as run_routes
 from .routes import sources as source_routes
 
@@ -60,6 +62,8 @@ def health() -> dict[str, str]:
 app.include_router(source_routes.router)
 app.include_router(extraction_routes.router)
 app.include_router(draft_routes.router)
+app.include_router(export_routes.router)
 app.include_router(batch_routes.router)
 app.include_router(audit_routes.router)
+app.include_router(result_routes.router)
 app.include_router(run_routes.router)
