@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, Loader } from "lucide-react";
+import { z } from "zod";
 import { apiGet, apiPostForm, ApiError } from "@/lib/api-client";
 import {
   MAX_SOURCE_BYTES,
@@ -8,6 +10,12 @@ import {
   sourceSchema,
   type Source,
 } from "@/lib/schemas/source";
+import {
+  extractionRunDetailSchema,
+  extractionRunSchema,
+  type ExtractionRun,
+  type ExtractionRunDetail,
+} from "@/lib/schemas/extraction";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -30,11 +38,36 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { ExtrahierenButton } from "./extrahieren-button";
+import { EntwurfCard } from "./entwurf-card";
 
 const TYP_LABEL: Record<Source["source_type"], string> = {
   text: "Text",
   markdown_file: "Markdown-Datei",
 };
+
+const STATUS_VARIANT: Record<
+  Source["extraction_status"],
+  "default" | "secondary" | "destructive" | "outline"
+> = {
+  "noch nicht extrahiert": "outline",
+  "wird extrahiert": "secondary",
+  extrahiert: "default",
+  "extrahiert, keine Treffer": "secondary",
+  "Extraktion fehlgeschlagen": "destructive",
+};
+
+const POLL_MS = 2000;
+
+type ExtState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | {
+      kind: "loaded";
+      runs: ExtractionRun[];
+      details: Map<string, ExtractionRunDetail>;
+    }
+  | { kind: "error"; message: string };
 
 function formatZeitpunkt(iso: string): string {
   const d = new Date(iso);
@@ -53,6 +86,12 @@ export function QuellenView() {
   const [fehler, setFehler] = useState<string | null>(null);
   const dateiInput = useRef<HTMLInputElement>(null);
 
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [extData, setExtData] = useState<Map<string, ExtState>>(new Map());
+  const pollHandles = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+    new Map(),
+  );
+
   useEffect(() => {
     apiGet<unknown>("/sources")
       .then((data) => setSources(sourceListSchema.parse(data)))
@@ -63,6 +102,138 @@ export function QuellenView() {
       )
       .finally(() => setLadeliste(false));
   }, []);
+
+  useEffect(() => {
+    const handles = pollHandles.current;
+    return () => {
+      for (const h of handles.values()) clearTimeout(h);
+      handles.clear();
+    };
+  }, []);
+
+  const updateSourceStatus = useCallback(
+    (sourceId: string, status: Source["extraction_status"]) => {
+      setSources((prev) =>
+        prev.map((s) =>
+          s.id === sourceId && s.extraction_status !== status
+            ? { ...s, extraction_status: status }
+            : s,
+        ),
+      );
+    },
+    [],
+  );
+
+  const loadRunDetail = useCallback(
+    async (runId: string): Promise<ExtractionRunDetail> => {
+      const data = await apiGet<unknown>(`/extractions/${runId}`);
+      return extractionRunDetailSchema.parse(data);
+    },
+    [],
+  );
+
+  const schedulePoll = useCallback(
+    (runId: string, sourceId: string) => {
+      const handle = setTimeout(async () => {
+        pollHandles.current.delete(runId);
+        try {
+          const detail = await loadRunDetail(runId);
+          setExtData((prev) => {
+            const next = new Map(prev);
+            const state = next.get(sourceId);
+            if (state?.kind === "loaded") {
+              const details = new Map(state.details);
+              details.set(runId, detail);
+              next.set(sourceId, { ...state, details });
+            }
+            return next;
+          });
+          if (detail.status === "läuft") {
+            schedulePoll(runId, sourceId);
+          }
+        } catch {
+          schedulePoll(runId, sourceId);
+        }
+      }, POLL_MS);
+      pollHandles.current.set(runId, handle);
+    },
+    [loadRunDetail],
+  );
+
+  const fetchExtractions = useCallback(
+    async (sourceId: string) => {
+      setExtData((prev) => new Map(prev).set(sourceId, { kind: "loading" }));
+      try {
+        const list = z
+          .array(extractionRunSchema)
+          .parse(await apiGet<unknown>(`/sources/${sourceId}/extractions`));
+        if (list.length === 0) {
+          setExtData(
+            (prev) =>
+              new Map(prev).set(sourceId, {
+                kind: "loaded",
+                runs: [],
+                details: new Map(),
+              }),
+          );
+          return;
+        }
+        const latest = list[0];
+        const detail = await loadRunDetail(latest.id);
+        const details = new Map<string, ExtractionRunDetail>();
+        details.set(latest.id, detail);
+        setExtData(
+          (prev) =>
+            new Map(prev).set(sourceId, {
+              kind: "loaded",
+              runs: list,
+              details,
+            }),
+        );
+        if (latest.status === "läuft") {
+          schedulePoll(latest.id, sourceId);
+        }
+      } catch (e) {
+        setExtData(
+          (prev) =>
+            new Map(prev).set(sourceId, {
+              kind: "error",
+              message:
+                e instanceof ApiError
+                  ? e.message
+                  : "Extraktionen konnten nicht geladen werden.",
+            }),
+        );
+      }
+    },
+    [loadRunDetail, schedulePoll],
+  );
+
+  function toggleExpand(sourceId: string) {
+    setExpandedId((prev) => {
+      if (prev === sourceId) return null;
+      const state = extData.get(sourceId);
+      if (!state || state.kind === "idle") {
+        void fetchExtractions(sourceId);
+      }
+      return sourceId;
+    });
+  }
+
+  async function handleStarted(sourceId: string, run: ExtractionRun) {
+    updateSourceStatus(sourceId, "wird extrahiert");
+    setExtData((prev) => {
+      const next = new Map(prev);
+      const state = next.get(sourceId);
+      const runs = [run, ...(state?.kind === "loaded" ? state.runs : [])];
+      const details =
+        state?.kind === "loaded" ? state.details : new Map<string, ExtractionRunDetail>();
+      next.set(sourceId, { kind: "loaded", runs, details });
+      return next;
+    });
+    setExpandedId(sourceId);
+    schedulePoll(run.id, sourceId);
+  }
 
   function reset() {
     setText("");
@@ -206,30 +377,207 @@ export function QuellenView() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8" />
                   <TableHead>Erfasst am</TableHead>
                   <TableHead>Quell-Hash</TableHead>
                   <TableHead>Typ</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Aktion</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sources.map((s) => (
-                  <TableRow key={s.id}>
-                    <TableCell>{formatZeitpunkt(s.captured_at)}</TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {s.source_hash.slice(0, 12)}
-                    </TableCell>
-                    <TableCell>{TYP_LABEL[s.source_type]}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary">{s.extraction_status}</Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {sources.map((s) => {
+                  const expanded = expandedId === s.id;
+                  const isRunning = s.extraction_status === "wird extrahiert";
+                  const showStart =
+                    s.extraction_status === "noch nicht extrahiert";
+                  const showRetry =
+                    s.extraction_status === "Extraktion fehlgeschlagen";
+                  return (
+                    <>
+                      <TableRow
+                        key={s.id}
+                        aria-expanded={expanded}
+                        className="cursor-pointer"
+                        onClick={() => toggleExpand(s.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            toggleExpand(s.id);
+                          }
+                        }}
+                        tabIndex={0}
+                      >
+                        <TableCell>
+                          {expanded ? (
+                            <ChevronDown
+                              className="size-4 text-muted-foreground"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <ChevronRight
+                              className="size-4 text-muted-foreground"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell>{formatZeitpunkt(s.captured_at)}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {s.source_hash.slice(0, 12)}
+                        </TableCell>
+                        <TableCell>{TYP_LABEL[s.source_type]}</TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center gap-1.5">
+                            {isRunning && (
+                              <Loader
+                                className="size-3 animate-spin"
+                                aria-hidden="true"
+                              />
+                            )}
+                            <Badge variant={STATUS_VARIANT[s.extraction_status]}>
+                              {s.extraction_status}
+                            </Badge>
+                          </span>
+                        </TableCell>
+                        <TableCell
+                          className="text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {showStart && (
+                            <ExtrahierenButton
+                              sourceId={s.id}
+                              variant="start"
+                              onStarted={(run) => handleStarted(s.id, run)}
+                            />
+                          )}
+                          {showRetry && (
+                            <ExtrahierenButton
+                              sourceId={s.id}
+                              variant="retry"
+                              onStarted={(run) => handleStarted(s.id, run)}
+                            />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      {expanded && (
+                        <TableRow key={`${s.id}-detail`} className="bg-muted/20">
+                          <TableCell colSpan={6} className="align-top p-0">
+                            <EntwuerfeSection
+                              state={extData.get(s.id)}
+                              onRetryLatest={() => toggleExpand(s.id)}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+interface SectionProps {
+  state: ExtState | undefined;
+  onRetryLatest: () => void;
+}
+
+function EntwuerfeSection({ state, onRetryLatest }: SectionProps) {
+  if (!state || state.kind === "idle" || state.kind === "loading") {
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        Extraktionen werden geladen …
+      </div>
+    );
+  }
+  if (state.kind === "error") {
+    return (
+      <div className="p-4">
+        <Alert variant="destructive">
+          <AlertDescription>{state.message}</AlertDescription>
+        </Alert>
+        <Button
+          size="sm"
+          variant="outline"
+          className="mt-2"
+          onClick={onRetryLatest}
+        >
+          Erneut versuchen
+        </Button>
+      </div>
+    );
+  }
+  if (state.runs.length === 0) {
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        Noch keine Extraktion gestartet.
+      </div>
+    );
+  }
+  const latest = state.runs[0];
+  const detail = state.details.get(latest.id);
+
+  if (latest.status === "läuft") {
+    return (
+      <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+        <Loader className="size-4 animate-spin" aria-hidden="true" />
+        Extraktion läuft (Modell {latest.model}, Prompt {latest.prompt_version}) …
+      </div>
+    );
+  }
+
+  if (latest.status === "fehlgeschlagen") {
+    return (
+      <div className="p-4">
+        <Alert variant="destructive">
+          <AlertDescription>
+            Extraktion fehlgeschlagen.
+            {latest.error_message && ` ${latest.error_message}`}
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
+  if (latest.status === "keine Treffer") {
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        Keine Strategie in dieser Quelle erkannt.
+      </div>
+    );
+  }
+
+  if (!detail) {
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        Entwurfsdetails werden geladen …
+      </div>
+    );
+  }
+
+  if (detail.drafts.length === 0) {
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        Keine Strategie in dieser Quelle erkannt.
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <p className="text-xs text-muted-foreground">
+        {detail.drafts.length === 1
+          ? "1 Entwurf erkannt"
+          : `${detail.drafts.length} Entwürfe erkannt`}{" "}
+        · Modell {detail.model} · Prompt {detail.prompt_version}
+      </p>
+      {detail.drafts.map((d) => (
+        <EntwurfCard key={d.id} draft={d} />
+      ))}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 # PROJ-2: KI-Extraktion
 
-## Status: In Progress (Backend done, Frontend offen)
+## Status: In Review (Backend + Frontend done)
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -133,6 +133,24 @@ FastAPI-Backend in `backend/`, untracked im Working Tree (committed in `master` 
 **Offen (Frontend):** `ExtrahierenButton`, `ExtraktionStatusBadge`, `EntwuerfeSection` mit `EntwurfCard`/`RegelBlock`/`QuellenbelegPopover`/`ParameterTabelle`/`OffeneUnklarheitenListe` in `nextjs_app/components/quellen/` — gehört zu nächstem Schritt `/abc-frontend`.
 
 **Security:** OpenCode-Authentifizierung erfolgt über dessen globales Credential-Management (`~/.config/opencode`); die App übergibt nie einen API-Key und loggt nie den Prompt-Inhalt. Timeout verhindert hängende Background-Tasks. Kein Auto-Retry bei Provider-Fehler.
+
+## Frontend-Implementierung (abc-frontend, 2026-07-15)
+
+Next.js 16 (App Router) + shadcn/ui (`base-nova`, neutral) in `nextjs_app/`. Erweitert die bestehende QuellenPage um Extraktions-UX gemäß Spec-Section A.
+
+**Neue/geänderte Dateien:**
+- `lib/schemas/extraction.ts` — zod-Schemas für `extractionRun`, `extractionRunDetail`, `draft`, `parameter`, `citation`, `openQuestion` (decken die Backend-Responses 1:1 ab, inkl. Status- und Richtungs-Enums).
+- `lib/api-client.ts` — neuer Helper `apiPost(path)` (plain JSON POST ohne Body) für `POST /sources/{id}/extractions`.
+- `components/quellen/extrahieren-button.tsx` — Button „Extrahieren" / „Erneut extrahieren" je nach Source-Status; feuert POST, gibt die neue `ExtractionRun` per Callback zurück.
+- `components/quellen/quellenbelege.tsx` — native `<details>`-basierter Quellenbeleg-Expander (Textauszug + Zeilenreferenz). Bewusst KEIN shadcn-Popover: spart neue Deps, ist nativ zugänglich und erfüllt die UX-Anforderung „Quellenbeleg je Regel anzeigen".
+- `components/quellen/entwurf-card.tsx` — `EntwurfCard` je erkannter Strategie: Kopf (Name + These), Badges (Kategorie, Richtung, Status), `status_reason`-Alert, Entry/Exit-Regelblock mit gruppierten Quellenbelegen, Warm-up/Simultaneous-Entry-Exit/Reversal-Zeilen, Parameter-Tabelle mit „Vorschlag"-Badge, offene Unklarheiten-Liste. Server-seitige `is_proposal=true` wird im UI explizit als „Vorschlag" markiert (PROJ-3 hebt das auf).
+- `components/quellen/quellen-view.tsx` — erweitert: pro Quellen-Zeile jetzt (1) Chevron-Spalte, (2) Status-Badge mit `Loader`-Spinner für „wird extrahiert", (3) `ExtrahierenButton` nur bei „noch nicht extrahiert" / „Extraktion fehlgeschlagen" (mit `stopPropagation` damit der Klick die Zeile nicht auf-/zuklappt). Auf-/Zuklappen per Klick auf die Zeile (oder Enter/Space, `tabindex=0`, `aria-expanded`); beim Öffnen wird `GET /sources/{id}/extractions` lazy geladen, beim aktuellen „läuft"-Run alle 2 s `GET /extractions/{id}` gepollt (stoppt automatisch sobald `status != "läuft"`, Cleanup in `useEffect` Unmount). Source-Status wird mit jeder Status-Änderung im Top-Level-State aktualisiert. Expand-Section zeigt: Loader-Hinweis während des Ladens, Fehler-Alert mit „Erneut versuchen", laufenden Modell/Prompt-Text, Fehlermeldung bei `fehlgeschlagen`, „Keine Strategie in dieser Quelle erkannt." bei `keine Treffer` (sowohl Backend-Status als auch leerer `drafts`-Array), Entwurfs-Cards je Draft.
+
+**Verifiziert:** `npm run lint` grün (0 Errors/Warnings), `npm run build` grün (TypeScript + statische Generierung für `/quellen`). Live-Smoke gegen FastAPI-Backend bestätigt: `POST /sources` liefert exakt das `Source`-Shape aus dem zod-Schema, `GET /categories` liefert die 9 Kategorien in Reihenfolge, `GET /extractions/{unknown-uuid}` → 404 mit deutscher `detail`-Meldung.
+
+**Designentscheidung „kein Popover":** Spec erwähnt `QuellenbelegPopover` als UI-Detail. shadcn-Popover-Primitive ist im Projekt nicht installiert. Native `<details>` ist die lazy-korrekte Wahl: keine neue Dep, nativ screenreader-tauglich, gleicher funktionaler Outcome (Klick → Auszug + Zeilenreferenz). Falls echte Hover-/Focus-Tooltips gewünscht sind, kann shadcn `popover` später per `npx shadcn@latest add popover` nachgezogen werden.
+
+**Verbleibend für PROJ-3:** Edit/Freigabe-Gate (PATCH-Endpoints, Versionsnummern, gesperrt-Status kann nur nach manueller Bestätigung aufgelöst werden). Die UI-Annotations- und Bearbeitungs-Workflow kommen mit dem nächsten Feature.
 
 ## QA Test Results
 _To be added by /qa_

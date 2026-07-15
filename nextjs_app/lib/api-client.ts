@@ -29,3 +29,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
   return handle<T>(await fetch(apiUrl(path), { method: "POST", body: form }));
 }
+
+export async function apiPost<T>(path: string): Promise<T> {
+  return handle<T>(await fetch(apiUrl(path), { method: "POST" }));
+}
