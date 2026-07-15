@@ -1,6 +1,6 @@
 # PROJ-6: Queue und trader.dev-Ausführung
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 **Frontend implemented:** 2026-07-15 (BatchAusfuehrung component, schemas, batch page integration)
@@ -282,4 +282,7 @@ nicht.
 - **Recommendation:** Alle API-Endpunkte, Frontend, Worker und Pine-Generator sind implementiert und getestet (165 Tests). Bereit für Deployment.
 
 ## Deployment
-_To be added by /deploy_
+**Date:** 2026-07-15
+**Version:** v0.2.4
+**Branch:** main (via dev merge)
+**URL:** https://strategy-bank.dokploy.dev

@@ -4,14 +4,14 @@
 
 | ID | Feature | Status | Priorität | Dependencies |
 |---|---|---|---|---|
-| PROJ-1 | Quellenerfassung | Approved | P0 | – |
-| PROJ-2 | KI-Extraktion | Approved | P0 | PROJ-1 |
-| PROJ-3 | Verifizierung und Versionierung | Approved | P0 | PROJ-2 |
-| PROJ-4 | Batch-Konfiguration | Approved | P0 | PROJ-3 |
-| PROJ-5 | Credit-Gate | Approved | P0 | PROJ-4 |
-| PROJ-6 | Queue und trader.dev-Ausführung | Approved | P0 | PROJ-5, PROJ-8 |
+| PROJ-1 | Quellenerfassung | Deployed | P0 | – |
+| PROJ-2 | KI-Extraktion | Deployed | P0 | PROJ-1 |
+| PROJ-3 | Verifizierung und Versionierung | Deployed | P0 | PROJ-2 |
+| PROJ-4 | Batch-Konfiguration | Deployed | P0 | PROJ-3 |
+| PROJ-5 | Credit-Gate | Deployed | P0 | PROJ-4 |
+| PROJ-6 | Queue und trader.dev-Ausführung | Deployed | P0 | PROJ-5, PROJ-8 |
 | PROJ-7 | Ergebnisvergleich | Planned | P0 | PROJ-6 |
-| PROJ-8 | Audit-Trail | Approved | P0 | PROJ-3, PROJ-4, PROJ-5 |
+| PROJ-8 | Audit-Trail | Deployed | P0 | PROJ-3, PROJ-4, PROJ-5 |
 | PROJ-9 | Markdown-Export | Planned | P1 | PROJ-8 |
 | PROJ-10 | Positions-, Exit- und Crypto-MTS-Kompatibilitätsmodell | Deployed | P0 | PROJ-2, PROJ-3 |
 
