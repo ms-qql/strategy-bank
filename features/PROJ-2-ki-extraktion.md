@@ -1,6 +1,6 @@
 # PROJ-2: KI-Extraktion
 
-## Status: In Review (Backend + Frontend done)
+## Status: Approved
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 

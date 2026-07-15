@@ -5,7 +5,7 @@
 | ID | Feature | Status | Priorität | Dependencies |
 |---|---|---|---|---|
 | PROJ-1 | Quellenerfassung | Approved | P0 | – |
-| PROJ-2 | KI-Extraktion | In Review | P0 | PROJ-1 |
+| PROJ-2 | KI-Extraktion | Approved | P0 | PROJ-1 |
 | PROJ-3 | Verifizierung und Versionierung | Architected | P0 | PROJ-2 |
 | PROJ-4 | Batch-Konfiguration | Planned | P0 | PROJ-3 |
 | PROJ-5 | Credit-Gate | Planned | P0 | PROJ-4 |
