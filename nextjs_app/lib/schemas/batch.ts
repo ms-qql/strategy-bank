@@ -58,8 +58,25 @@ export const batchSchema = z.object({
   strategy_version_ids: z.array(z.string()),
   instruments: z.array(instrumentSchema),
   direction_modes: z.array(z.string()),
+  credit_max: z.number().int().nullable().optional(),
+  credit_balance: z.number().int().nullable().optional(),
+  credit_remaining: z.number().int().nullable().optional(),
+  credit_tier: z.string().nullable().optional(),
+  credit_reset: z.string().nullable().optional(),
+  credit_checked_at: z.string().nullable().optional(),
 });
 export type Batch = z.infer<typeof batchSchema>;
+
+export const creditStatusSchema = z.object({
+  planned_actions: z.number().int(),
+  credit_balance: z.number().int(),
+  credit_remaining: z.number().int(),
+  tier: z.string(),
+  reset: z.string(),
+  blocked: z.boolean(),
+  block_reason: z.string().nullable(),
+});
+export type CreditStatus = z.infer<typeof creditStatusSchema>;
 
 export const previewRunSchema = z.object({
   strategy_version_id: z.string(),

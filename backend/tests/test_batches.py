@@ -1,3 +1,4 @@
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -217,15 +218,26 @@ class TestBatchConfirm:
             json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
         ).json()
 
-        resp = client.post(f"/batches/{batch['id']}/confirm")
+        with patch("app.routes.batches.get_credits") as mock_credits:
+            mock_credits.return_value = {
+                "balance": 1000, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000,
+            }
+            resp = client.post(
+                f"/batches/{batch['id']}/confirm", json={"credit_max": 3},
+            )
+
         assert resp.status_code == 201, resp.text
         confirmed = resp.json()
         assert confirmed["status"] == "bestätigt"
         assert confirmed["confirmed_at"] is not None
+        assert confirmed["credit_max"] == 3
+        assert confirmed["credit_balance"] == 1000
+        assert confirmed["credit_remaining"] == 997
+        assert confirmed["credit_tier"] == "free"
 
         preview = client.get(f"/batches/{batch['id']}/preview").json()
-        from app.db import run_query
-        rows = run_query("SELECT status, run_kind FROM runs WHERE batch_id = %s", [batch["id"]])
+        from app.db import run_query as rq
+        rows = rq("SELECT status, run_kind FROM runs WHERE batch_id = %s", [batch["id"]])
         assert len(rows) == len(preview) == 3
         assert all(r["status"] == "geplant" and r["run_kind"] == "standard" for r in rows)
 
@@ -236,13 +248,131 @@ class TestBatchConfirm:
             "/batches",
             json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
         ).json()
-        client.post(f"/batches/{batch['id']}/confirm")
+
+        with patch("app.routes.batches.get_credits") as mock_credits:
+            mock_credits.return_value = {
+                "balance": 1000, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000,
+            }
+            client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": 3})
 
         resp = client.patch(f"/batches/{batch['id']}", json={"timeframe": "1h"})
         assert resp.status_code == 422
 
-        resp2 = client.post(f"/batches/{batch['id']}/confirm")
+        with patch("app.routes.batches.get_credits") as mock_credits:
+            mock_credits.return_value = {
+                "balance": 1000, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000,
+            }
+            resp2 = client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": 3})
         assert resp2.status_code == 422
+
+    def test_credit_max_too_low_rejected(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        batch = client.post(
+            "/batches",
+            json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
+        ).json()
+        resp = client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": 1})
+        assert resp.status_code == 422
+        assert "Credit-Maximum" in resp.json()["detail"]
+
+    def test_insufficient_credits_rejected(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        batch = client.post(
+            "/batches",
+            json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
+        ).json()
+
+        with patch("app.routes.batches.get_credits") as mock_credits:
+            mock_credits.return_value = {
+                "balance": 1, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000,
+            }
+            resp = client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": 3})
+        assert resp.status_code == 422
+        assert "Unzureichende Credits" in resp.json()["detail"]
+
+    def test_service_error_returns_502(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        batch = client.post(
+            "/batches",
+            json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
+        ).json()
+
+        with patch("app.routes.batches.get_credits") as mock_credits:
+            mock_credits.side_effect = __import__(
+                "app.services.trader_dev", fromlist=["CreditServiceError"]
+            ).CreditServiceError("Test-Error")
+            resp = client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": 3})
+        assert resp.status_code == 502
+
+
+class TestCreditCheck:
+    def test_returns_credit_status(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        batch = client.post(
+            "/batches",
+            json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
+        ).json()
+
+        with patch("app.routes.batches.get_credits") as mock_credits:
+            mock_credits.return_value = {
+                "balance": 500, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000,
+            }
+            resp = client.get(f"/batches/{batch['id']}/credit-check")
+
+        assert resp.status_code == 200, resp.text
+        status = resp.json()
+        assert status["planned_actions"] == 3  # 1 v × 3 instr × 1 mode
+        assert status["credit_balance"] == 500
+        assert status["credit_remaining"] == 497
+        assert status["tier"] == "free"
+        assert not status["blocked"]
+        assert status["block_reason"] is None
+
+    def test_blocked_when_insufficient_credits(self, client):
+        profile = _make_profile(client)
+        v1 = _make_frozen_version(client)
+        v2 = _make_frozen_version(client)
+        batch = client.post(
+            "/batches",
+            json={
+                "backtest_profile_id": profile["id"],
+                "strategy_version_ids": [v1["id"], v2["id"]],
+            },
+        ).json()
+
+        with patch("app.routes.batches.get_credits") as mock_credits:
+            mock_credits.return_value = {
+                "balance": 2, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000,
+            }
+            resp = client.get(f"/batches/{batch['id']}/credit-check")
+
+        status = resp.json()
+        assert status["planned_actions"] == 6  # 2 v × 3 instr × 1 mode
+        assert status["blocked"] is True
+        assert "Unzureichende Credits" in status["block_reason"]
+
+    def test_service_error_returns_502(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        batch = client.post(
+            "/batches",
+            json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
+        ).json()
+
+        with patch("app.routes.batches.get_credits") as mock_credits:
+            mock_credits.side_effect = __import__(
+                "app.services.trader_dev", fromlist=["CreditServiceError"]
+            ).CreditServiceError("Test-Error")
+            resp = client.get(f"/batches/{batch['id']}/credit-check")
+        assert resp.status_code == 502
+
+    def test_unknown_batch_404(self, client):
+        resp = client.get(f"/batches/{uuid4()}/credit-check")
+        assert resp.status_code == 404
 
 
 class TestHoldoutForwardTest:

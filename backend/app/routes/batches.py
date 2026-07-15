@@ -15,14 +15,17 @@ from ..db import run_command, run_query, run_query_one, transaction
 from ..schemas.batches import (
     BacktestProfileRead,
     BacktestProfileWrite,
+    BatchConfirmIn,
     BatchCreate,
     BatchRead,
     BatchUpdate,
+    CreditStatus,
     HoldoutBatchCreate,
     HoldoutStatusRead,
     InstrumentIn,
     PreviewRun,
 )
+from ..services.trader_dev import CreditServiceError, get_credits
 
 router = APIRouter(tags=["batches"])
 
@@ -295,8 +298,48 @@ def preview_batch(batch_id: UUID) -> list[dict]:
     ]
 
 
+@router.get("/batches/{batch_id}/credit-check", response_model=CreditStatus)
+def get_credit_check(batch_id: UUID) -> dict:
+    batch = run_query_one("SELECT id, status FROM batches WHERE id = %s", [batch_id])
+    if not batch:
+        raise HTTPException(404, "Batch nicht gefunden.")
+
+    strategy_version_ids, instruments, direction_modes = _batch_children(batch_id)
+    planned_actions = len(strategy_version_ids) * len(instruments) * len(direction_modes)
+
+    try:
+        credits = get_credits()
+    except CreditServiceError as exc:
+        raise HTTPException(502, f"Credit-Prüfung fehlgeschlagen: {exc}")
+
+    credit_balance = int(credits["balance"])
+    credit_remaining = credit_balance - planned_actions
+
+    blocked = False
+    block_reason = None
+    if credit_balance < planned_actions:
+        blocked = True
+        block_reason = (
+            f"Unzureichende Credits: {credit_balance} verfügbar, "
+            f"{planned_actions} benötigt — es fehlen {planned_actions - credit_balance}."
+        )
+    if not (strategy_version_ids and instruments and direction_modes):
+        blocked = True
+        block_reason = "Batch ist unvollständig."
+
+    return {
+        "planned_actions": planned_actions,
+        "credit_balance": credit_balance,
+        "credit_remaining": credit_remaining,
+        "tier": credits["tier"],
+        "reset": credits["reset"],
+        "blocked": blocked,
+        "block_reason": block_reason,
+    }
+
+
 @router.post("/batches/{batch_id}/confirm", response_model=BatchRead, status_code=201)
-def confirm_batch(batch_id: UUID) -> dict:
+def confirm_batch(batch_id: UUID, body: BatchConfirmIn) -> dict:
     batch = run_query_one("SELECT id, status, run_kind FROM batches WHERE id = %s", [batch_id])
     if not batch:
         raise HTTPException(404, "Batch nicht gefunden.")
@@ -307,11 +350,42 @@ def confirm_batch(batch_id: UUID) -> dict:
     if not (strategy_version_ids and instruments and direction_modes):
         raise HTTPException(422, "Batch ist unvollständig — Strategieversion, Instrument und Richtungsmodus erforderlich.")
 
+    planned_actions = len(strategy_version_ids) * len(instruments) * len(direction_modes)
+    if body.credit_max < planned_actions:
+        raise HTTPException(422, f"Credit-Maximum ({body.credit_max}) deckt nicht alle {planned_actions} geplanten Runs ab.")
+
+    try:
+        credits = get_credits()
+    except CreditServiceError as exc:
+        raise HTTPException(502, f"Credit-Prüfung fehlgeschlagen: {exc}")
+
+    credit_balance = int(credits["balance"])
+    credit_remaining = credit_balance - planned_actions
+
+    if credit_balance < planned_actions:
+        raise HTTPException(
+            422,
+            f"Unzureichende Credits: {credit_balance} verfügbar, "
+            f"{planned_actions} benötigt — es fehlen {planned_actions - credit_balance}.",
+        )
+
     now = datetime.now(timezone.utc)
     with transaction() as cur:
         cur.execute(
-            "UPDATE batches SET status = 'bestätigt', confirmed_at = %s WHERE id = %s",
-            [now, batch_id],
+            """
+            UPDATE batches SET
+                status = 'bestätigt',
+                confirmed_at = %s,
+                credit_max = %s,
+                credit_balance = %s,
+                credit_remaining = %s,
+                credit_tier = %s,
+                credit_reset = %s,
+                credit_checked_at = %s
+            WHERE id = %s
+            """,
+            [now, body.credit_max, credit_balance, credit_remaining,
+             credits["tier"], credits["reset"], now, batch_id],
         )
         for sv_id in strategy_version_ids:
             for instr in instruments:
