@@ -636,7 +636,7 @@ export default function EntwurfEditPage() {
                     <Button
                       variant="ghost"
                       size="icon-sm"
-                      onClick={() => handleCloseOpenQuestion(q.description)}
+                      onClick={() => handleCloseOpenQuestion(q.id)}
                       aria-label="Unklarheit schließen"
                     >
                       <X className="h-4 w-4" />

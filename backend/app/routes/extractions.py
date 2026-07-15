@@ -30,7 +30,7 @@ def _load_draft(draft: dict) -> dict:
         [draft_id],
     )
     open_questions = run_query(
-        "SELECT description, reasoning FROM draft_open_questions WHERE draft_id = %s",
+        "SELECT id, description, reasoning FROM draft_open_questions WHERE draft_id = %s",
         [draft_id],
     )
     return {

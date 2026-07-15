@@ -375,7 +375,7 @@ def _load_draft(draft_id: UUID) -> dict:
         [draft_id],
     )
     open_questions = run_query(
-        "SELECT description, reasoning FROM draft_open_questions WHERE draft_id = %s",
+        "SELECT id, description, reasoning FROM draft_open_questions WHERE draft_id = %s",
         [draft_id],
     )
     from ..schemas.extractions import CitationRead, OpenQuestionRead, ParameterRead  # noqa: PLC0415

@@ -30,6 +30,7 @@ class CitationRead(BaseModel):
 
 
 class OpenQuestionRead(BaseModel):
+    id: UUID
     description: str
     reasoning: str
 
