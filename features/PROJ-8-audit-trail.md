@@ -1,6 +1,6 @@
 # PROJ-8: Audit-Trail
 
-## Status: Planned
+## Status: Architected
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -36,7 +36,93 @@ Die zu speichernden externen trader.dev-Metadaten stammen verbindlich aus `docs/
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /architecture_
+**Erstellt:** 2026-07-15 · **Stack:** Next.js 16 (App Router) + shadcn/ui / FastAPI + raw SQL / PostgreSQL · **Branch:** dev
+
+### A) Komponentenstruktur (UI)
+
+```text
+ErgebnisvergleichPage (PROJ-7)
+└── Ergebniszeile
+    └── „Audit-Trail ansehen“ → /runs/{id}/audit
+
+RunAuditPage (neu, ausschließlich lesend)
+├── RunKopf (Status, Auswertungsart, Instrument, Richtung, Zeitstempel)
+├── StrategieSnapshot (Version, Regeln, Parameter, Herkunft)
+├── BacktestKonfiguration (vollständiges Profil, Timeframe und Zeitraum)
+├── Ausfuehrungsdetails (Agent-Runtime, Modell, Prompt-/Executor-Version, MCP-Aktion)
+├── ProviderMetadaten (Engine-/Datenstand, sofern von trader.dev geliefert)
+└── ExterneArtefakte
+    ├── ReportLink oder „Report-Link nicht verfügbar“
+    └── Rohantwort oder „Rohantwort nicht verfügbar“
+```
+
+Die Detailseite hat keine Bearbeitungsaktionen. Sie zeigt fehlende optionale
+Provider-Angaben ausdrücklich als nicht verfügbar und unterscheidet Research,
+historischen Holdout und echten Forward-Test mit demselben Run-Typ wie PROJ-4/7.
+
+### B) Datenmodell (Klartext)
+
+```text
+run_audits (NEU, genau ein eigenständiger Eintrag je Run)
+  - Referenz auf den bestehenden Run und seinen bestätigten Batch
+  - vollständiger Snapshot der eingefrorenen Strategieversion einschließlich Parameter
+  - vollständiger Snapshot der verwendeten Backtest-Profilversion
+  - Provider-Symbol, Timeframe, Zeitraum, Richtungsmodus und Auswertungsart
+  - Credit-Maximum und Kontostand-Snapshot aus PROJ-5
+  - Agent-Runtime, Modell, Prompt-Version und Executor-Version
+  - verwendete trader.dev-MCP-Aktion
+  - externe Job-/Ergebnis-ID sowie optionale Engine- und Datenstand-Angaben
+  - erstellt, gestartet und beendet; jeder Zeitpunkt wird nur einmal gesetzt
+  - externer Report-Link, sofern geliefert
+  - rohe strukturierte trader.dev-Antwort, sofern geliefert
+  - expliziter Verfügbarkeitsstatus für Report-Link und Rohantwort
+  - finalisiert_at: ab diesem Zeitpunkt vollständig gegen Änderung und Löschung gesperrt
+```
+
+Der Audit-Eintrag entsteht zusammen mit dem Run bei der Batch-Bestätigung. Dadurch
+sind Strategie, Profil, Run-Konfiguration und Credit-Snapshot bereits vor der
+externen Ausführung gesichert. PROJ-6 ergänzt Job-ID, Runtime-Daten und Zeitpunkte
+nur beim tatsächlichen Ereignis und finalisiert den Eintrag beim terminalen
+Run-Status. Ein Prozessneustart kann ausschließlich noch nicht gesetzte Felder
+nachtragen; bereits gespeicherte Werte werden nie ersetzt.
+
+Die vorhandene `runs`-Tabelle bleibt Quelle für Queue-Status und Idempotency-Key.
+`run_audits` kopiert nur die für eine dauerhaft eigenständige Reproduktion nötigen
+Fakten. So bleibt ein alter Audit-Trail vollständig, selbst wenn später neue
+Strategie- oder Profilversionen entstehen. Gespeichert wird in PostgreSQL; Dateien
+fallen nicht an, daher wird MinIO nicht benötigt.
+
+### C) API-Form (nur Endpunkte)
+
+```text
+GET /runs/{id}/audit
+    → liefert den vollständigen, nur lesbaren Audit-Trail des Runs
+```
+
+Es gibt keinen öffentlichen POST-, PATCH- oder DELETE-Endpunkt für Audit-Daten.
+Anlage, einmaliges Ergänzen und Finalisierung erfolgen ausschließlich innerhalb
+der bestehenden serverseitigen Bestätigungs- und Ausführungsabläufe aus PROJ-5/6.
+PROJ-7 verlinkt die Detailansicht direkt über die Run-ID.
+
+### D) Tech-Entscheidungen (warum)
+
+- **Ein vollständiger Snapshot pro Run:** Unveränderliche Referenzen allein wären technisch ausreichend, aber kein eigenständiger Audit-Beleg. Der Snapshot hält exakt die damals sichtbaren Regeln, Parameter und Profileinstellungen zusammen und verhindert rückwirkende Abhängigkeiten.
+- **Eine Audit-Zeile statt eines zusätzlichen Event-Systems:** Das Feature verlangt Reproduzierbarkeit, keine allgemeine Ereignis-Timeline. Ein Datensatz mit einmalig gesetzten Lebenszyklusfeldern deckt den Bedarf mit weniger Datenmodell und UI ab.
+- **Früh anlegen, spät finalisieren:** Konfigurations- und Credit-Fakten werden bei Bestätigung gesichert; Laufzeitfakten können erst während PROJ-6 bekannt werden. Nach terminalem Status sperrt die Datenbank den gesamten Eintrag gegen Änderung und Löschung.
+- **Nur noch leere Felder ergänzen:** Start, Ende, externe IDs und Antworten dürfen jeweils nur einmal gesetzt werden. Das macht die Fortsetzung nach Prozessneustart sicher, ohne historische Tatsachen umzuschreiben.
+- **Expliziter Verfügbarkeitsstatus:** Ein fehlender Link oder eine fehlende Rohantwort ist eine fachliche Information und wird nicht als mehrdeutiges leeres Feld dargestellt.
+- **Rohe Antwort als strukturierter Wert:** trader.dev liefert strukturierte Daten; PostgreSQL bewahrt sie vollständig für spätere Nachprüfung, ohne schon heute jedes mögliche Provider-Feld in eigene Spalten zu zwingen.
+- **Kein eigener Schreib-Endpunkt:** Audit-Daten entstehen aus serverseitig bekannten Fakten. Ein öffentlicher Schreibpfad würde Manipulation ermöglichen, ohne einen Nutzerfall zu erfüllen.
+- **Keine Mandantenlogik:** Die bestehende App ist laut PRD eine Single-Trader-Anwendung ohne Mandant/RLS. Die vorhandene lokale Authentisierung schützt die Leseansicht wie den Rest der App.
+
+### E) Abhängigkeiten
+
+- Backend: keine neuen Python-Pakete; vorhandenes FastAPI, Pydantic und PostgreSQL/raw SQL genügen.
+- Frontend: keine neuen npm-Pakete; vorhandene shadcn/ui-Komponenten Card, Badge, Alert und Button genügen.
+- PROJ-3 liefert den unveränderlichen Strategieversions-Snapshot.
+- PROJ-4 liefert Profilversion, Run-Konfiguration und Auswertungsart.
+- PROJ-5 liefert den unveränderlichen Credit-Snapshot bei Bestätigung.
+- PROJ-6 ergänzt Laufzeit-, Provider- und Ergebnisdaten und finalisiert den Audit-Eintrag.
 
 ## QA Test Results
 _To be added by /qa_

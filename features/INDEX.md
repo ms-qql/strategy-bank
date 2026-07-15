@@ -11,7 +11,7 @@
 | PROJ-5 | Credit-Gate | Planned | P0 | PROJ-4 |
 | PROJ-6 | Queue und trader.dev-Ausführung | Planned | P0 | PROJ-5, PROJ-8 |
 | PROJ-7 | Ergebnisvergleich | Planned | P0 | PROJ-6 |
-| PROJ-8 | Audit-Trail | Planned | P0 | PROJ-3, PROJ-4, PROJ-5 |
+| PROJ-8 | Audit-Trail | Architected | P0 | PROJ-3, PROJ-4, PROJ-5 |
 | PROJ-9 | Markdown-Export | Planned | P1 | PROJ-8 |
 
 **Empfohlene Build-Reihenfolge:** PROJ-1 → PROJ-2 → PROJ-3 → PROJ-4 → PROJ-5 → PROJ-8 → PROJ-6 → PROJ-7. PROJ-9 folgt als P1.
