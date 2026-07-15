@@ -304,6 +304,19 @@ def mark_untestable(draft_id: UUID, body: MarkUntestableRequest) -> None:
     )
 
 
+@router.post("/drafts/{draft_id}/mark-draft", status_code=204)
+def mark_draft(draft_id: UUID) -> None:
+    draft = run_query_one("SELECT id, status FROM strategy_drafts WHERE id = %s", [draft_id])
+    if not draft:
+        raise HTTPException(404, "Entwurf nicht gefunden.")
+    if draft["status"] == "freigegeben":
+        raise HTTPException(422, "Bereits freigegebene Entwürfe können nicht geändert werden.")
+    run_command(
+        "UPDATE strategy_drafts SET status = 'Entwurf', status_reason = NULL WHERE id = %s",
+        [draft_id],
+    )
+
+
 @router.post("/versions/{version_id}/new-draft", response_model=dict, status_code=201)
 def new_draft_from_version(version_id: UUID) -> dict:
     version = run_query_one(

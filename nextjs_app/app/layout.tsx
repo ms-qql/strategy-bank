@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import packageJson from "@/package.json";
+import { ThemeToggle } from "@/components/theme-toggle";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -13,8 +14,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="de" className="h-full antialiased">
+    <html lang="de" className="h-full antialiased" suppressHydrationWarning>
       <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "document.documentElement.classList.toggle('dark', localStorage.theme ? localStorage.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches)",
+          }}
+        />
         {/* DSGVO: Schriften über Bunny Fonts (EU-Domain), nie über den Google-Fonts-CDN */}
         <link
           rel="stylesheet"
@@ -22,6 +28,7 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-full bg-background font-sans text-foreground">
+        <ThemeToggle />
         {children}
         <footer className="px-6 pb-4 font-mono text-[10px] tracking-widest text-muted-foreground">
           STRATEGY BANK · v{packageJson.version}
