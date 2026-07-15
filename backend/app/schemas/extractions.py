@@ -30,6 +30,7 @@ class CitationRead(BaseModel):
 
 
 class OpenQuestionRead(BaseModel):
+    id: UUID
     description: str
     reasoning: str
 
@@ -51,6 +52,8 @@ class DraftRead(BaseModel):
     status: str
     status_reason: str | None
     created_at: datetime
+    family_id: UUID | None = None
+    parent_version_id: UUID | None = None
     parameters: list[ParameterRead] = []
     citations: list[CitationRead] = []
     open_questions: list[OpenQuestionRead] = []

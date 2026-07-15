@@ -139,7 +139,7 @@ def test_execute_extraction_marks_keine_treffer(monkeypatch):
     assert source_row["extraction_status"] == "extrahiert, keine Treffer"
 
 
-def test_execute_extraction_hides_provider_error_details(monkeypatch):
+def test_execute_extraction_hides_provider_error_details(monkeypatch, caplog):
     def _provider_error(_prompt):
         raise RuntimeError("api_key=super-secret")
 
@@ -163,5 +163,7 @@ def test_execute_extraction_hides_provider_error_details(monkeypatch):
     assert run_row["status"] == "fehlgeschlagen"
     assert run_row["error_message"] == "Extraktion konnte nicht abgeschlossen werden."
     assert "super-secret" not in run_row["error_message"]
+    assert "stage=provider_or_parser error_type=RuntimeError" in caplog.text
+    assert "super-secret" not in caplog.text
     source_row = run_query_one("SELECT extraction_status FROM sources WHERE id = %s", [source["id"]])
     assert source_row["extraction_status"] == "Extraktion fehlgeschlagen"

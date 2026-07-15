@@ -1,7 +1,9 @@
 "use client";
 
-import { TriangleAlert, BookOpen } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { TriangleAlert, BookOpen, Pencil } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Table,
@@ -21,6 +23,7 @@ const STATUS_VARIANT: Record<
   Entwurf: "secondary",
   "nicht testbar": "destructive",
   "gesperrt (unvollständig)": "destructive",
+  freigegeben: "default",
 };
 
 const DIRECTION_LABEL: Record<Draft["direction"], string> = {
@@ -69,6 +72,8 @@ interface Props {
 }
 
 export function EntwurfCard({ draft }: Props) {
+  const router = useRouter();
+
   return (
     <div className="rounded-lg border border-border bg-card p-4 text-sm">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -82,6 +87,14 @@ export function EntwurfCard({ draft }: Props) {
           <Badge variant="outline">{draft.category}</Badge>
           <Badge variant="outline">{DIRECTION_LABEL[draft.direction]}</Badge>
           <Badge variant={STATUS_VARIANT[draft.status]}>{draft.status}</Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(`/entwuerfe/${draft.id}`)}
+          >
+            <Pencil className="mr-1 h-3.5 w-3.5" />
+            Entwurf bearbeiten
+          </Button>
         </div>
       </header>
 

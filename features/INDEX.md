@@ -6,8 +6,8 @@
 |---|---|---|---|---|
 | PROJ-1 | Quellenerfassung | Approved | P0 | – |
 | PROJ-2 | KI-Extraktion | Approved | P0 | PROJ-1 |
-| PROJ-3 | Verifizierung und Versionierung | Architected | P0 | PROJ-2 |
-| PROJ-4 | Batch-Konfiguration | Planned | P0 | PROJ-3 |
+| PROJ-3 | Verifizierung und Versionierung | Approved | P0 | PROJ-2 |
+| PROJ-4 | Batch-Konfiguration | Approved | P0 | PROJ-3 |
 | PROJ-5 | Credit-Gate | Planned | P0 | PROJ-4 |
 | PROJ-6 | Queue und trader.dev-Ausführung | Planned | P0 | PROJ-5, PROJ-8 |
 | PROJ-7 | Ergebnisvergleich | Planned | P0 | PROJ-6 |

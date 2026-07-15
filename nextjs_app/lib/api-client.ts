@@ -33,3 +33,35 @@ export async function apiPostForm<T>(path: string, form: FormData): Promise<T> {
 export async function apiPost<T>(path: string): Promise<T> {
   return handle<T>(await fetch(apiUrl(path), { method: "POST" }));
 }
+
+export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
+  return handle<T>(
+    await fetch(apiUrl(path), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function apiPostJson<T>(path: string, body: unknown): Promise<T> {
+  return handle<T>(
+    await fetch(apiUrl(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }),
+  );
+}
+
+export async function apiDelete(path: string): Promise<void> {
+  const res = await fetch(apiUrl(path), { method: "DELETE" });
+  if (!res.ok) {
+    let detail = `Anfrage fehlgeschlagen (${res.status}).`;
+    try {
+      const body = await res.json();
+      if (typeof body?.detail === "string") detail = body.detail;
+    } catch { /* ignore */ }
+    throw new ApiError(detail);
+  }
+}

@@ -1,6 +1,6 @@
 # PROJ-1: Quellenerfassung
 
-## Status: In Progress
+## Status: Approved
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
