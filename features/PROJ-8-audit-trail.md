@@ -8,6 +8,7 @@
 - Requires: PROJ-3 (Verifizierung und Versionierung) — liefert die unveränderlichen Strategieversionen als Referenz.
 - Requires: PROJ-4 (Batch-Konfiguration) — liefert Backtest-Profil und geplante Runs.
 - Requires: PROJ-5 (Credit-Gate) — liefert Credit-Maximum und Kontostand-Snapshot.
+- Extended by: PROJ-10 (Positions-, Exit- und Crypto-MTS-Kompatibilitätsmodell) — ergänzt reproduktionsrelevante Felder im Strategieversions-Snapshot, ohne eine harte Laufzeitabhängigkeit zu erzeugen.
 
 Die zu speichernden externen trader.dev-Metadaten stammen verbindlich aus `docs/trader-dev-capability-spike.md`. PROJ-6 schreibt seine Laufzeitdaten anschließend in diese persistente Grundlage.
 
@@ -18,6 +19,7 @@ Die zu speichernden externen trader.dev-Metadaten stammen verbindlich aus `docs/
 
 ## Acceptance Criteria
 - [ ] Jeder Run referenziert dauerhaft und unveränderlich: die eingefrorene Strategieversion, das vollständige Backtest-Profil, Instrument-ID/Timeframe/Zeitraum, Richtungsmodus, Agent-Runtime und Modell, Prompt-/Executor-Version, die verwendete trader.dev-MCP-Aktion (`run_backtest`/`quick_backtest`), verfügbare Engine- und Datenstand-Angaben, Start-, End- und Erstellungszeitpunkt sowie externen Report-Link und rohe strukturierte Antwort (sofern verfügbar).
+- [ ] Für PROJ-10-Versionen zeigt der Audit-Trail zusätzlich den bestätigten Positionsmodus, die vollständig aufgelöste Exit-Regel samt Herkunft und Parametern sowie die Crypto-MTS-Eignung aus dem eingefrorenen Strategie-Snapshot.
 - [ ] Änderungen an einer Strategie (neue Version) überschreiben keine historischen Run-Datensätze; alte Runs bleiben unverändert einsehbar und weiterhin ihrer ursprünglichen Version zugeordnet.
 - [ ] Jeder Audit-Trail-Eintrag ist von der Ergebnisansicht (PROJ-7) aus für den jeweiligen Run direkt aufrufbar.
 - [ ] Für jeden Run ist erkennbar, ob es sich um Research-, historisches Holdout- oder echtes Forward-Ergebnis handelt (Herkunft aus PROJ-4).
@@ -28,6 +30,7 @@ Die zu speichernden externen trader.dev-Metadaten stammen verbindlich aus `docs/
 - Zwei Runs teilen sich dieselbe Strategieversion, aber unterschiedliche Backtest-Profile: jeder Run hat einen eigenständigen, vollständigen Audit-Trail-Eintrag, kein gemeinsames „geteiltes" Profilobjekt, das sich rückwirkend ändern könnte.
 - Prozessneustart während eines laufenden Runs: nach Fortsetzung (PROJ-6) wird der Audit-Trail nachträglich um End-/Erstellungszeitpunkt vervollständigt, nicht rückwirkend verändert vor dem tatsächlichen Ereignis.
 - Export eines Runs ohne Report-Link (siehe PROJ-7 „unvollständig"): Audit-Trail zeigt das Fehlen explizit statt eines Platzhalter-Links.
+- Eine vor PROJ-10 eingefrorene Legacy-Version enthält die neuen Positions-/Exit-/Crypto-MTS-Felder nicht: Der Audit-Trail zeigt „Nicht verfügbar — Legacy-Version“ und ergänzt keine nachträglich geratenen Werte.
 
 ## Technical Requirements (optional)
 - Persistenz: append-only für Run-bezogene Audit-Daten, keine UPDATE-Operationen auf bereits abgeschlossene Runs außer dem einmaligen Nachtragen von End-/Erstellungszeitpunkt bei Prozessfortsetzung.
@@ -47,7 +50,7 @@ ErgebnisvergleichPage (PROJ-7)
 
 RunAuditPage (neu, ausschließlich lesend)
 ├── RunKopf (Status, Auswertungsart, Instrument, Richtung, Zeitstempel)
-├── StrategieSnapshot (Version, Regeln, Parameter, Herkunft)
+├── StrategieSnapshot (Version, Regeln, Parameter, Herkunft sowie PROJ-10-Positionsmodus, Exit-Herkunft und Crypto-MTS-Eignung)
 ├── BacktestKonfiguration (vollständiges Profil, Timeframe und Zeitraum)
 ├── Ausfuehrungsdetails (Agent-Runtime, Modell, Prompt-/Executor-Version, MCP-Aktion)
 ├── ProviderMetadaten (Engine-/Datenstand, sofern von trader.dev geliefert)
@@ -65,7 +68,7 @@ historischen Holdout und echten Forward-Test mit demselben Run-Typ wie PROJ-4/7.
 ```text
 run_audits (NEU, genau ein eigenständiger Eintrag je Run)
   - Referenz auf den bestehenden Run und seinen bestätigten Batch
-  - vollständiger Snapshot der eingefrorenen Strategieversion einschließlich Parameter
+  - vollständiger Snapshot der eingefrorenen Strategieversion einschließlich Parameter und vorhandener PROJ-10-Felder
   - vollständiger Snapshot der verwendeten Backtest-Profilversion
   - Provider-Symbol, Timeframe, Zeitraum, Richtungsmodus und Auswertungsart
   - Credit-Maximum und Kontostand-Snapshot aus PROJ-5
@@ -91,6 +94,9 @@ Die vorhandene `runs`-Tabelle bleibt Quelle für Queue-Status und Idempotency-Ke
 Fakten. So bleibt ein alter Audit-Trail vollständig, selbst wenn später neue
 Strategie- oder Profilversionen entstehen. Gespeichert wird in PostgreSQL; Dateien
 fallen nicht an, daher wird MinIO nicht benötigt.
+
+Bei Legacy-Snapshots bleiben fehlende PROJ-10-Felder leer und werden in der UI
+als „Nicht verfügbar — Legacy-Version“ erklärt; sie werden nicht rekonstruiert.
 
 ### C) API-Form (nur Endpunkte)
 
@@ -122,6 +128,7 @@ PROJ-7 verlinkt die Detailansicht direkt über die Run-ID.
 - PROJ-3 liefert den unveränderlichen Strategieversions-Snapshot.
 - PROJ-4 liefert Profilversion, Run-Konfiguration und Auswertungsart.
 - PROJ-5 liefert den unveränderlichen Credit-Snapshot bei Bestätigung.
+- PROJ-10 erweitert den übernommenen Strategie-Snapshot um Positionsmodus, aufgelösten Exit-Vertrag und Crypto-MTS-Eignung; `run_audits` benötigt dafür keine zusätzlichen Felder oder Schreibpfade.
 - PROJ-6 ergänzt Laufzeit-, Provider- und Ergebnisdaten und finalisiert den Audit-Eintrag.
 
 ## QA Test Results
