@@ -9,7 +9,7 @@
 | PROJ-3 | Verifizierung und Versionierung | Approved | P0 | PROJ-2 |
 | PROJ-4 | Batch-Konfiguration | Approved | P0 | PROJ-3 |
 | PROJ-5 | Credit-Gate | Approved | P0 | PROJ-4 |
-| PROJ-6 | Queue und trader.dev-Ausführung | Planned | P0 | PROJ-5, PROJ-8 |
+| PROJ-6 | Queue und trader.dev-Ausführung | Architected | P0 | PROJ-5, PROJ-8 |
 | PROJ-7 | Ergebnisvergleich | Planned | P0 | PROJ-6 |
 | PROJ-8 | Audit-Trail | Architected | P0 | PROJ-3, PROJ-4, PROJ-5 |
 | PROJ-9 | Markdown-Export | Planned | P1 | PROJ-8 |
