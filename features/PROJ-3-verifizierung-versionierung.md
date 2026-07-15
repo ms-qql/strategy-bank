@@ -1,6 +1,6 @@
 # PROJ-3: Verifizierung und Versionierung
 
-## Status: Architected
+## Status: Approved
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 

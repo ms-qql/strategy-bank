@@ -46,6 +46,16 @@ def list_backtest_profiles() -> list[dict]:
     )
 
 
+@router.get("/backtest-profiles/versions/{profile_id}", response_model=BacktestProfileRead)
+def get_backtest_profile_version(profile_id: UUID) -> dict:
+    """Einzelne (auch nicht mehr aktuelle) Profilversion per eigener ID —
+    für die Anzeige eines Batches, der eine bereits ersetzte Version referenziert."""
+    row = run_query_one("SELECT * FROM backtest_profiles WHERE id = %s", [profile_id])
+    if not row:
+        raise HTTPException(404, "Backtest-Profil nicht gefunden.")
+    return row
+
+
 @router.get("/backtest-profiles/{family_id}/versions", response_model=list[BacktestProfileRead])
 def list_backtest_profile_versions(family_id: UUID) -> list[dict]:
     rows = run_query(
@@ -127,14 +137,18 @@ def _create_batch(
         raise HTTPException(422, "Backtest-Profil nicht gefunden.")
     _validate_strategy_versions(strategy_version_ids)
 
-    resolved_instruments = instruments or [InstrumentIn(**i) for i in DEFAULT_INSTRUMENTS]
-    resolved_modes = direction_modes or ["kombiniert"]
+    resolved_instruments = (
+        instruments if instruments is not None else [InstrumentIn(**i) for i in DEFAULT_INSTRUMENTS]
+    )
+    resolved_modes = direction_modes if direction_modes is not None else ["kombiniert"]
     _validate_direction_modes(resolved_modes)
     resolved_timeframe = timeframe or DEFAULT_TIMEFRAME
     resolved_start = period_start or date.fromisoformat(DEFAULT_PERIOD_START)
     resolved_end = period_end if period_end is not None else (
         date.fromisoformat(DEFAULT_PERIOD_END) if run_kind == "standard" else period_end
     )
+    if run_kind == "standard" and resolved_end is not None and resolved_end > date.fromisoformat(DEFAULT_PERIOD_END):
+        raise HTTPException(422, f"Zeitraum eines Standard-Batches darf nicht über {DEFAULT_PERIOD_END} hinausgehen.")
 
     batch_id = uuid4()
     with transaction() as cur:
@@ -195,11 +209,17 @@ def get_batch(batch_id: UUID) -> dict:
 
 @router.patch("/batches/{batch_id}", response_model=BatchRead)
 def update_batch(batch_id: UUID, body: BatchUpdate) -> dict:
-    batch = run_query_one("SELECT id, status FROM batches WHERE id = %s", [batch_id])
+    batch = run_query_one("SELECT id, status, run_kind FROM batches WHERE id = %s", [batch_id])
     if not batch:
         raise HTTPException(404, "Batch nicht gefunden.")
     if batch["status"] != "entwurf":
         raise HTTPException(422, "Bestätigte Batches können nicht mehr bearbeitet werden.")
+    if (
+        batch["run_kind"] == "standard"
+        and body.period_end is not None
+        and body.period_end > date.fromisoformat(DEFAULT_PERIOD_END)
+    ):
+        raise HTTPException(422, f"Zeitraum eines Standard-Batches darf nicht über {DEFAULT_PERIOD_END} hinausgehen.")
 
     fields: dict[str, object] = {}
     if body.backtest_profile_id is not None:

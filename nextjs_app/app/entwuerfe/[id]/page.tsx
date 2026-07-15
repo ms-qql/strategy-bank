@@ -20,6 +20,14 @@ import {
   type VersionListItem,
   type VersionRead,
 } from "@/lib/schemas/draft";
+import {
+  backtestProfileSchema,
+  batchSchema,
+  holdoutStatusSchema,
+  type BacktestProfile,
+  type Batch,
+  type HoldoutStatus,
+} from "@/lib/schemas/batch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -127,6 +135,13 @@ export default function EntwurfEditPage() {
   // Versions
   const [versions, setVersions] = useState<VersionListItem[]>([]);
   const [viewingVersion, setViewingVersion] = useState<VersionRead | null>(null);
+
+  // Holdout / Forward-Test
+  const [evalProfiles, setEvalProfiles] = useState<BacktestProfile[]>([]);
+  const [evalProfileId, setEvalProfileId] = useState("");
+  const [holdoutStatus, setHoldoutStatus] = useState<HoldoutStatus | null>(null);
+  const [holdoutLoading, setHoldoutLoading] = useState(false);
+  const [forwardLoading, setForwardLoading] = useState(false);
 
   // Freeze / mark-untestable
   const [freezeLoading, setFreezeLoading] = useState(false);
@@ -280,8 +295,56 @@ export default function EntwurfEditPage() {
     try {
       const v = versionReadSchema.parse(await apiGet<VersionRead>(`/versions/${versionId}`));
       setViewingVersion(v);
+      setHoldoutStatus(
+        holdoutStatusSchema.parse(
+          await apiGet<HoldoutStatus>(`/strategy-versions/${versionId}/holdout-status`),
+        ),
+      );
+      if (evalProfiles.length === 0) {
+        const p = z
+          .array(backtestProfileSchema)
+          .parse(await apiGet<BacktestProfile[]>("/backtest-profiles"));
+        setEvalProfiles(p);
+        if (p.length > 0) setEvalProfileId(p[0].id);
+      }
     } catch {
       setError("Version konnte nicht geladen werden.");
+    }
+  };
+
+  const handleStartHoldout = async () => {
+    if (!viewingVersion || !evalProfileId) return;
+    setHoldoutLoading(true);
+    setError(null);
+    try {
+      const batch = batchSchema.parse(
+        await apiPostJson<Batch>(`/strategy-versions/${viewingVersion.id}/holdout-batch`, {
+          backtest_profile_id: evalProfileId,
+        }),
+      );
+      router.push(`/batches?batch=${batch.id}`);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Holdout konnte nicht gestartet werden.");
+    } finally {
+      setHoldoutLoading(false);
+    }
+  };
+
+  const handleStartForwardTest = async () => {
+    if (!viewingVersion || !evalProfileId) return;
+    setForwardLoading(true);
+    setError(null);
+    try {
+      const batch = batchSchema.parse(
+        await apiPostJson<Batch>(`/strategy-versions/${viewingVersion.id}/forward-test-batch`, {
+          backtest_profile_id: evalProfileId,
+        }),
+      );
+      router.push(`/batches?batch=${batch.id}`);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Forward-Test konnte nicht gestartet werden.");
+    } finally {
+      setForwardLoading(false);
     }
   };
 
@@ -691,6 +754,9 @@ export default function EntwurfEditPage() {
                         >
                           Neuer Entwurf
                         </Button>
+                        <Button variant="outline" size="sm" onClick={() => router.push(`/batches?version=${v.id}`)}>
+                          Batch starten
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -711,7 +777,14 @@ export default function EntwurfEditPage() {
                 Freigegeben am {new Date(viewingVersion.frozen_at).toLocaleString("de-DE")}
               </CardDescription>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => setViewingVersion(null)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setViewingVersion(null);
+                setHoldoutStatus(null);
+              }}
+            >
               <X className="h-4 w-4" />
             </Button>
           </CardHeader>
@@ -789,6 +862,48 @@ export default function EntwurfEditPage() {
                 </Table>
               </div>
             )}
+
+            <div className="rounded-md border border-border p-4">
+              <p className="mb-3 text-sm font-medium">Auswertungen</p>
+              {evalProfiles.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Erst ein Backtest-Profil unter „Batch-Konfiguration&quot; anlegen.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <div className="max-w-xs">
+                    <SelectField
+                      label="Backtest-Profil"
+                      value={evalProfileId}
+                      options={evalProfiles.map((p) => ({
+                        value: p.id,
+                        label: `${p.name} (v${p.version_number})`,
+                      }))}
+                      onChange={setEvalProfileId}
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleStartHoldout}
+                      disabled={holdoutLoading || holdoutStatus?.consumed === true}
+                    >
+                      {holdoutLoading && <Loader className="mr-1 h-4 w-4 animate-spin" />}
+                      Historischen Holdout auswerten
+                    </Button>
+                    <Button variant="outline" onClick={handleStartForwardTest} disabled={forwardLoading}>
+                      {forwardLoading && <Loader className="mr-1 h-4 w-4 animate-spin" />}
+                      Forward-Test starten
+                    </Button>
+                  </div>
+                  {holdoutStatus?.consumed && (
+                    <p className="text-xs text-muted-foreground">
+                      Holdout bereits verwendet für diese Strategie-Familie.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="flex justify-end">
               <Button onClick={() => handleNewDraftFromVersion(viewingVersion.id)}>

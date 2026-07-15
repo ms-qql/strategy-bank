@@ -71,6 +71,16 @@ def _make_profile(client: TestClient) -> dict:
     return resp.json()
 
 
+class TestListAllVersions:
+    def test_lists_versions_across_families(self, client):
+        v1 = _make_frozen_version(client)
+        v2 = _make_frozen_version(client)
+        resp = client.get("/versions")
+        assert resp.status_code == 200, resp.text
+        ids = {v["id"] for v in resp.json()}
+        assert {v1["id"], v2["id"]} <= ids
+
+
 class TestBacktestProfiles:
     def test_create_defaults(self, client):
         profile = _make_profile(client)
@@ -99,6 +109,17 @@ class TestBacktestProfiles:
         listed = client.get("/backtest-profiles").json()
         assert len(listed) == 1
         assert listed[0]["version_number"] == 2
+
+    def test_get_single_version_by_own_id_returns_superseded_version(self, client):
+        profile = _make_profile(client)
+        client.patch(f"/backtest-profiles/{profile['family_id']}", json={**_PROFILE_BODY, "name": "v2"})
+        resp = client.get(f"/backtest-profiles/versions/{profile['id']}")
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["version_number"] == 1
+
+    def test_get_single_version_unknown_id_404(self, client):
+        resp = client.get(f"/backtest-profiles/versions/{uuid4()}")
+        assert resp.status_code == 404
 
 
 class TestBatchCreateAndPreview:
@@ -144,6 +165,46 @@ class TestBatchCreateAndPreview:
             "/batches",
             json={"backtest_profile_id": profile["id"], "strategy_version_ids": [str(uuid4())]},
         )
+        assert resp.status_code == 422
+
+    def test_explicit_empty_instruments_and_modes_not_replaced_with_defaults(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        resp = client.post(
+            "/batches",
+            json={
+                "backtest_profile_id": profile["id"],
+                "strategy_version_ids": [version["id"]],
+                "instruments": [],
+                "direction_modes": [],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        batch = resp.json()
+        assert batch["instruments"] == []
+        assert batch["direction_modes"] == []
+
+    def test_standard_batch_period_end_beyond_default_rejected(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        resp = client.post(
+            "/batches",
+            json={
+                "backtest_profile_id": profile["id"],
+                "strategy_version_ids": [version["id"]],
+                "period_end": "2025-06-01",
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_standard_batch_period_end_beyond_default_rejected_on_patch(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        batch = client.post(
+            "/batches",
+            json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
+        ).json()
+        resp = client.patch(f"/batches/{batch['id']}", json={"period_end": "2025-06-01"})
         assert resp.status_code == 422
 
 

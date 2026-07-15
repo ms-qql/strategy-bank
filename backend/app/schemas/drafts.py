@@ -60,3 +60,11 @@ class VersionListItem(BaseModel):
     version_number: int
     frozen_at: datetime
     created_at: datetime
+
+
+class VersionSummary(BaseModel):
+    id: UUID
+    family_id: UUID
+    version_number: int
+    name: str | None
+    frozen_at: datetime

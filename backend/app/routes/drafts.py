@@ -12,6 +12,7 @@ from ..schemas.drafts import (
     VersionListItem,
     VersionParameterRead,
     VersionRead,
+    VersionSummary,
 )
 
 router = APIRouter(tags=["drafts"])
@@ -294,6 +295,18 @@ def new_draft_from_version(version_id: UUID) -> dict:
         )
 
     return _load_draft(new_id)
+
+
+@router.get("/versions", response_model=list[VersionSummary])
+def list_all_versions() -> list[dict]:
+    """Alle freigegebenen Strategieversionen — für die Batch-Konfiguration (PROJ-4),
+    um Strategieversionen familienübergreifend auswählbar zu machen."""
+    return run_query(
+        """
+        SELECT id, family_id, version_number, snapshot->>'name' AS name, frozen_at
+        FROM strategy_versions ORDER BY frozen_at DESC
+        """
+    )
 
 
 @router.get("/drafts/{draft_id}/versions", response_model=list[VersionListItem])

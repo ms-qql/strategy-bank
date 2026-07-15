@@ -1,0 +1,765 @@
+"use client";
+
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { z } from "zod";
+import { apiGet, apiPatch, apiPostJson, ApiError } from "@/lib/api-client";
+import { ArrowLeft, Check, Loader, Plus, TriangleAlert, X } from "lucide-react";
+import {
+  backtestProfileSchema,
+  batchSchema,
+  previewRunSchema,
+  versionSummarySchema,
+  DIRECTION_MODES,
+  type BacktestProfile,
+  type Batch,
+  type Instrument,
+  type PreviewRun,
+  type VersionSummary,
+} from "@/lib/schemas/batch";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+
+const DEFAULT_INSTRUMENTS: Instrument[] = [
+  { provider_symbol: "BYBIT:BTCUSDT.P", label: "BTC" },
+  { provider_symbol: "BYBIT:SPYUSDT.P", label: "S&P-500-Proxy" },
+  { provider_symbol: "XAUUSD", label: "Gold" },
+];
+
+const DIRECTION_MODE_LABELS: Record<string, string> = {
+  kombiniert: "Kombiniert (Long & Short)",
+  "long-only": "Long-only",
+  "short-only": "Short-only",
+};
+
+const NEW_PROFILE_DEFAULTS = {
+  name: "",
+  timezone_session: "Exchange-Zeitzone",
+  signal_timing: "Schlusskurs",
+  fill_timing: "nächster verfügbarer Bar-Open",
+  order_type: "Market",
+  fee_pct: 0.06,
+  slippage_ticks: 2,
+  starting_capital: 10000,
+  quote_currency: "USD",
+  position_sizing: "Fix 100% Kapital",
+  compounding_rule: "Kein Compounding",
+  leverage: 1,
+  pyramiding: false,
+  max_open_positions: 1,
+  missing_bars_handling: "Bar überspringen",
+  corporate_actions_handling: "Ignorieren",
+};
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>{label}</Label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+export default function BatchesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <BatchesPageInner />
+    </Suspense>
+  );
+}
+
+function BatchesPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const preselectVersion = searchParams.get("version");
+  const loadBatchId = searchParams.get("batch");
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const [profiles, setProfiles] = useState<BacktestProfile[]>([]);
+  const [versions, setVersions] = useState<VersionSummary[]>([]);
+
+  const [profileMode, setProfileMode] = useState<"existing" | "new">("new");
+  const [selectedProfileId, setSelectedProfileId] = useState("");
+  const [newProfile, setNewProfile] = useState(NEW_PROFILE_DEFAULTS);
+  const [creatingProfile, setCreatingProfile] = useState(false);
+
+  const [selectedVersionIds, setSelectedVersionIds] = useState<string[]>(
+    preselectVersion ? [preselectVersion] : [],
+  );
+  const [instruments, setInstruments] = useState<Instrument[]>(DEFAULT_INSTRUMENTS);
+  const [timeframe, setTimeframe] = useState("4h");
+  const [periodStart, setPeriodStart] = useState("2021-01-01");
+  const [periodEnd, setPeriodEnd] = useState("2024-12-31");
+  const [directionModes, setDirectionModes] = useState<string[]>(["kombiniert"]);
+
+  const [batch, setBatch] = useState<Batch | null>(null);
+  const [preview, setPreview] = useState<PreviewRun[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+
+  const refreshPreview = useCallback(async (batchId: string) => {
+    try {
+      const p = z.array(previewRunSchema).parse(await apiGet<PreviewRun[]>(`/batches/${batchId}/preview`));
+      setPreview(p);
+    } catch {
+      setPreview([]);
+    }
+  }, []);
+
+  const loadInitial = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const p = z.array(backtestProfileSchema).parse(await apiGet<BacktestProfile[]>("/backtest-profiles"));
+      setProfiles(p);
+      if (p.length > 0 && !loadBatchId) {
+        setSelectedProfileId(p[0].id);
+        setProfileMode("existing");
+      }
+      const v = z.array(versionSummarySchema).parse(await apiGet<VersionSummary[]>("/versions"));
+      setVersions(v);
+
+      if (loadBatchId) {
+        const loaded = batchSchema.parse(await apiGet<Batch>(`/batches/${loadBatchId}`));
+        setBatch(loaded);
+        setProfileMode("existing");
+        setSelectedProfileId(loaded.backtest_profile_id);
+        if (!p.some((profile) => profile.id === loaded.backtest_profile_id)) {
+          const referenced = backtestProfileSchema.parse(
+            await apiGet<BacktestProfile>(`/backtest-profiles/versions/${loaded.backtest_profile_id}`),
+          );
+          setProfiles((prev) => [...prev, referenced]);
+        }
+        setSelectedVersionIds(loaded.strategy_version_ids);
+        setInstruments(loaded.instruments);
+        setTimeframe(loaded.timeframe);
+        setPeriodStart(loaded.period_start);
+        setPeriodEnd(loaded.period_end ?? "");
+        setDirectionModes(loaded.direction_modes);
+        await refreshPreview(loaded.id);
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Daten konnten nicht geladen werden.");
+    } finally {
+      setLoading(false);
+    }
+  }, [loadBatchId, refreshPreview]);
+
+  useEffect(() => {
+    loadInitial();
+  }, [loadInitial]);
+
+  const isConfirmed = batch?.status === "bestätigt";
+  const isStandardBatch = !batch || batch.run_kind === "standard";
+
+  const toggleVersion = (id: string) => {
+    setSelectedVersionIds((prev) =>
+      prev.includes(id) ? prev.filter((v) => v !== id) : [...prev, id],
+    );
+  };
+
+  const toggleDirectionMode = (mode: string) => {
+    setDirectionModes((prev) =>
+      prev.includes(mode) ? prev.filter((m) => m !== mode) : [...prev, mode],
+    );
+  };
+
+  const updateInstrument = (idx: number, field: keyof Instrument, value: string) => {
+    setInstruments((prev) => prev.map((i, n) => (n === idx ? { ...i, [field]: value } : i)));
+  };
+
+  const addInstrument = () => {
+    setInstruments((prev) => [...prev, { provider_symbol: "", label: "" }]);
+  };
+
+  const removeInstrument = (idx: number) => {
+    setInstruments((prev) => prev.filter((_, n) => n !== idx));
+  };
+
+  const handleCreateProfile = async () => {
+    setCreatingProfile(true);
+    setError(null);
+    try {
+      const created = backtestProfileSchema.parse(
+        await apiPostJson<BacktestProfile>("/backtest-profiles", newProfile),
+      );
+      setProfiles((prev) => [...prev, created]);
+      setSelectedProfileId(created.id);
+      setProfileMode("existing");
+      setSuccess("Profil angelegt.");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Profil konnte nicht angelegt werden.");
+    } finally {
+      setCreatingProfile(false);
+    }
+  };
+
+  const handleSaveDraft = async () => {
+    setError(null);
+    setSuccess(null);
+    if (!selectedProfileId) {
+      setError("Bitte ein Backtest-Profil wählen oder anlegen.");
+      return;
+    }
+    if (selectedVersionIds.length === 0) {
+      setError("Bitte mindestens eine Strategieversion wählen.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = {
+        backtest_profile_id: selectedProfileId,
+        strategy_version_ids: selectedVersionIds,
+        instruments: instruments.filter((i) => i.provider_symbol.trim()),
+        direction_modes: directionModes,
+        timeframe,
+        period_start: periodStart,
+        period_end: periodEnd || undefined,
+      };
+      const saved = batchSchema.parse(
+        batch
+          ? await apiPatch<Batch>(`/batches/${batch.id}`, body)
+          : await apiPostJson<Batch>("/batches", body),
+      );
+      setBatch(saved);
+      await refreshPreview(saved.id);
+      setSuccess("Entwurf gespeichert.");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!batch) return;
+    setConfirming(true);
+    setError(null);
+    try {
+      const confirmed = batchSchema.parse(await apiPostJson<Batch>(`/batches/${batch.id}/confirm`, {}));
+      setBatch(confirmed);
+      await refreshPreview(confirmed.id);
+      setSuccess("Batch bestätigt — Runs sind angelegt.");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Bestätigen fehlgeschlagen.");
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-4xl px-4 py-6">
+      <Button variant="ghost" size="sm" className="mb-4" onClick={() => router.push("/quellen")}>
+        <ArrowLeft className="mr-1 h-4 w-4" />
+        Zurück zu Quellen
+      </Button>
+
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Batch-Konfiguration</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Instrumente, Zeitraum, Timeframe und Richtung für einen Vergleich mehrerer
+            Strategieversionen festlegen.
+          </p>
+        </div>
+        {batch && (
+          <div className="flex gap-2">
+            {!isStandardBatch && (
+              <Badge variant="outline">
+                {batch.run_kind === "holdout" ? "Historischer Holdout" : "Forward-Test"}
+              </Badge>
+            )}
+            <Badge variant={isConfirmed ? "default" : "secondary"}>{batch.status}</Badge>
+          </div>
+        )}
+      </div>
+
+      {error && (
+        <Alert variant="destructive" className="mb-4">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+      {success && (
+        <Alert className="mb-4 border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200">
+          <Check aria-hidden="true" />
+          <AlertDescription>{success}</AlertDescription>
+        </Alert>
+      )}
+
+      {/* Backtest-Profil */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Backtest-Profil</CardTitle>
+          <CardDescription>
+            Wiederverwendbares Profil — alle Runs dieses Batches nutzen dasselbe Profil.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {profiles.length > 0 && (
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-64">
+                <SelectField
+                  label="Vorhandenes Profil"
+                  value={profileMode === "existing" ? selectedProfileId : ""}
+                  options={profiles.map((p) => ({
+                    value: p.id,
+                    label: `${p.name} (v${p.version_number})`,
+                  }))}
+                  onChange={(v) => {
+                    setSelectedProfileId(v);
+                    setProfileMode("existing");
+                  }}
+                  disabled={isConfirmed}
+                />
+              </div>
+              {!isConfirmed && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setProfileMode(profileMode === "new" ? "existing" : "new")}
+                >
+                  {profileMode === "new" ? "Vorhandenes nutzen" : "Neues Profil"}
+                </Button>
+              )}
+            </div>
+          )}
+
+          {profileMode === "new" && !isConfirmed && (
+            <div className="flex flex-col gap-4 rounded-md border border-border p-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label>Name</Label>
+                  <Input
+                    value={newProfile.name}
+                    onChange={(e) => setNewProfile({ ...newProfile, name: e.target.value })}
+                    placeholder="z. B. Standard"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Zeitzone / Handelssitzung</Label>
+                  <Input
+                    value={newProfile.timezone_session}
+                    onChange={(e) => setNewProfile({ ...newProfile, timezone_session: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Signalzeitpunkt</Label>
+                  <Input
+                    value={newProfile.signal_timing}
+                    onChange={(e) => setNewProfile({ ...newProfile, signal_timing: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Fill-Zeitpunkt</Label>
+                  <Input
+                    value={newProfile.fill_timing}
+                    onChange={(e) => setNewProfile({ ...newProfile, fill_timing: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Ordertyp</Label>
+                  <Input
+                    value={newProfile.order_type}
+                    onChange={(e) => setNewProfile({ ...newProfile, order_type: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Gebühren (%)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={newProfile.fee_pct}
+                    onChange={(e) => setNewProfile({ ...newProfile, fee_pct: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Slippage (Ticks)</Label>
+                  <Input
+                    type="number"
+                    value={newProfile.slippage_ticks}
+                    onChange={(e) =>
+                      setNewProfile({ ...newProfile, slippage_ticks: Number(e.target.value) })
+                    }
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Startkapital</Label>
+                  <Input
+                    type="number"
+                    value={newProfile.starting_capital}
+                    onChange={(e) =>
+                      setNewProfile({ ...newProfile, starting_capital: Number(e.target.value) })
+                    }
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Quote-Währung</Label>
+                  <Input
+                    value={newProfile.quote_currency}
+                    onChange={(e) => setNewProfile({ ...newProfile, quote_currency: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Positionsgröße & Compounding</Label>
+                  <Input
+                    value={newProfile.position_sizing}
+                    onChange={(e) => setNewProfile({ ...newProfile, position_sizing: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Compounding-Regel</Label>
+                  <Input
+                    value={newProfile.compounding_rule}
+                    onChange={(e) => setNewProfile({ ...newProfile, compounding_rule: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Leverage</Label>
+                  <Input
+                    type="number"
+                    step="0.1"
+                    value={newProfile.leverage}
+                    onChange={(e) => setNewProfile({ ...newProfile, leverage: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Max. gleichzeitig offene Positionen</Label>
+                  <Input
+                    type="number"
+                    value={newProfile.max_open_positions}
+                    onChange={(e) =>
+                      setNewProfile({ ...newProfile, max_open_positions: Number(e.target.value) })
+                    }
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Umgang mit fehlenden Bars</Label>
+                  <Input
+                    value={newProfile.missing_bars_handling}
+                    onChange={(e) =>
+                      setNewProfile({ ...newProfile, missing_bars_handling: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label>Umgang mit Corporate Actions</Label>
+                  <Input
+                    value={newProfile.corporate_actions_handling}
+                    onChange={(e) =>
+                      setNewProfile({ ...newProfile, corporate_actions_handling: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={newProfile.pyramiding}
+                  onCheckedChange={(checked) =>
+                    setNewProfile({ ...newProfile, pyramiding: checked === true })
+                  }
+                />
+                <Label>Pyramiding erlaubt</Label>
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  onClick={handleCreateProfile}
+                  disabled={creatingProfile || !newProfile.name.trim()}
+                >
+                  {creatingProfile && <Loader className="mr-1 h-4 w-4 animate-spin" />}
+                  Profil anlegen
+                </Button>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Strategieversionen */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Strategieversionen</CardTitle>
+          <CardDescription>Nur freigegebene Versionen sind wählbar.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {versions.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              Noch keine freigegebenen Strategieversionen vorhanden.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {versions.map((v) => (
+                <label
+                  key={v.id}
+                  className="flex items-center gap-3 rounded-md border border-border p-3 text-sm"
+                >
+                  <Checkbox
+                    checked={selectedVersionIds.includes(v.id)}
+                    onCheckedChange={() => toggleVersion(v.id)}
+                    disabled={isConfirmed}
+                  />
+                  <span className="font-medium">{v.name ?? "Unbenannt"}</span>
+                  <span className="text-muted-foreground">v{v.version_number}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    freigegeben {new Date(v.frozen_at).toLocaleDateString("de-DE")}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Instrumente */}
+      <Card className="mb-6">
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Instrumente</CardTitle>
+            <CardDescription>Provider-Symbole, nicht nur der fachliche Name.</CardDescription>
+          </div>
+          {!isConfirmed && (
+            <Button variant="outline" size="sm" onClick={addInstrument}>
+              <Plus className="mr-1 h-4 w-4" />
+              Hinzufügen
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Provider-Symbol</TableHead>
+                <TableHead>Label</TableHead>
+                {!isConfirmed && <TableHead className="w-10" />}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {instruments.map((instr, idx) => (
+                <TableRow key={idx}>
+                  <TableCell>
+                    {isConfirmed ? (
+                      <span className="font-mono">{instr.provider_symbol}</span>
+                    ) : (
+                      <Input
+                        value={instr.provider_symbol}
+                        onChange={(e) => updateInstrument(idx, "provider_symbol", e.target.value)}
+                        className="h-8 font-mono text-sm"
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {isConfirmed ? (
+                      <span>{instr.label}</span>
+                    ) : (
+                      <Input
+                        value={instr.label ?? ""}
+                        onChange={(e) => updateInstrument(idx, "label", e.target.value)}
+                        className="h-8 text-sm"
+                      />
+                    )}
+                  </TableCell>
+                  {!isConfirmed && (
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => removeInstrument(idx)}
+                        aria-label="Instrument entfernen"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </TableCell>
+                  )}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      {/* Zeitraum & Timeframe */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Zeitraum & Timeframe</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-3">
+          <div className="flex flex-col gap-1.5">
+            <Label>Timeframe</Label>
+            <Input value={timeframe} onChange={(e) => setTimeframe(e.target.value)} disabled={isConfirmed} />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Von</Label>
+            <input
+              type="date"
+              value={periodStart}
+              onChange={(e) => setPeriodStart(e.target.value)}
+              disabled={isConfirmed || !isStandardBatch}
+              max={isStandardBatch ? "2024-12-31" : undefined}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs disabled:opacity-50"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label>Bis</Label>
+            <input
+              type="date"
+              value={periodEnd}
+              onChange={(e) => setPeriodEnd(e.target.value)}
+              disabled={isConfirmed || !isStandardBatch}
+              max={isStandardBatch ? "2024-12-31" : undefined}
+              placeholder={!isStandardBatch && batch?.run_kind === "forward_test" ? "offen" : undefined}
+              className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs disabled:opacity-50"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Richtungsmodus */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Richtungsmodus</CardTitle>
+          <CardDescription>
+            Mehrfachauswahl möglich — jeder gewählte Modus erzeugt einen eigenen Run.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {DIRECTION_MODES.map((mode) => (
+            <label key={mode} className="flex items-center gap-3 text-sm">
+              <Checkbox
+                checked={directionModes.includes(mode)}
+                onCheckedChange={() => toggleDirectionMode(mode)}
+                disabled={isConfirmed}
+              />
+              {DIRECTION_MODE_LABELS[mode]}
+            </label>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* Aktionsleiste */}
+      <Card className="mb-6 border-2 border-border">
+        <CardHeader>
+          <CardTitle>Vorschau & Bestätigung</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          {!isConfirmed && (
+            <div className="flex justify-end">
+              <Button onClick={handleSaveDraft} disabled={saving}>
+                {saving && <Loader className="mr-1 h-4 w-4 animate-spin" />}
+                Entwurf speichern
+              </Button>
+            </div>
+          )}
+
+          {batch && (
+            <>
+              <div>
+                <p className="mb-2 text-sm font-medium">
+                  Geplante Runs ({preview.length}): Strategieversion × Instrument × Richtungsmodus
+                </p>
+                {preview.length === 0 ? (
+                  <p className="py-4 text-center text-sm text-muted-foreground">
+                    Keine Runs vorhanden — Konfiguration unvollständig.
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Strategieversion</TableHead>
+                        <TableHead>Instrument</TableHead>
+                        <TableHead>Richtungsmodus</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {preview.map((r, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-mono text-xs">
+                            {versions.find((v) => v.id === r.strategy_version_id)?.name ??
+                              r.strategy_version_id}
+                          </TableCell>
+                          <TableCell className="font-mono">{r.provider_symbol}</TableCell>
+                          <TableCell>{DIRECTION_MODE_LABELS[r.direction_mode] ?? r.direction_mode}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+
+              {!isConfirmed && (
+                <div className="flex justify-end">
+                  <Button
+                    variant="default"
+                    onClick={handleConfirm}
+                    disabled={confirming || preview.length === 0}
+                  >
+                    {confirming && <Loader className="mr-1 h-4 w-4 animate-spin" />}
+                    Batch bestätigen
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
