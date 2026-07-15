@@ -1,5 +1,5 @@
-// FastAPI-Backend-Client. Basis-URL aus Env, Default lokales Backend.
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// FastAPI-Backend hinter dem Next.js-Rewrite; lokal ebenfalls via /api.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
 export class ApiError extends Error {}
 

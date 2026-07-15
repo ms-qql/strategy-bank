@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     # OpenCode ist bereits global auf diesem Host authentifiziert (eigenes
     # Provider-Credential-Management) — die App übergibt nie einen API-Key.
     opencode_binary: str = "/home/dev/.opencode/bin/opencode"
-    extraction_model: str = "openrouter/anthropic/claude-sonnet-5"
+    extraction_model: str = "opencode-go/kimi-k2.7-code"
     extraction_prompt_version: str = "v1"
     extraction_timeout_seconds: float = 300.0
 

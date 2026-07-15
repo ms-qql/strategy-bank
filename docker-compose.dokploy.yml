@@ -1,0 +1,43 @@
+name: strategy-bank
+
+services:
+  strategy-bank-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: strategy_bank
+      POSTGRES_USER: strategy_bank
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Dokploy}
+    volumes:
+      - strategy-bank-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U strategy_bank -d strategy_bank"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  strategy-bank-api:
+    build: ./backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in Dokploy}
+      OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:?Set OPENCODE_GO_API_KEY in Dokploy}
+      ENV: production
+    depends_on:
+      strategy-bank-db:
+        condition: service_healthy
+    expose:
+      - "8000"
+
+  strategy-bank-web:
+    build:
+      context: ./nextjs_app
+      args:
+        BACKEND_URL: http://strategy-bank-api:8000
+    depends_on:
+      - strategy-bank-api
+    expose:
+      - "3000"
+
+volumes:
+  strategy-bank-data:
