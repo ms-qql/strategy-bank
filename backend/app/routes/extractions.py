@@ -92,7 +92,7 @@ def get_extraction(run_id: UUID) -> dict:
 
     drafts = run_query(
         """
-        SELECT id, extraction_run_id, source_hash, name, thesis, category, direction,
+        SELECT id, extraction_run_id, source_hash, version, name, thesis, category, direction,
                entry_rule, exit_rule, warmup_requirement, simultaneous_entry_exit_behavior,
                reversal_behavior, status, status_reason, created_at
         FROM strategy_drafts WHERE extraction_run_id = %s ORDER BY created_at
@@ -106,7 +106,7 @@ def get_extraction(run_id: UUID) -> dict:
 def get_draft(draft_id: UUID) -> dict:
     draft = run_query_one(
         """
-        SELECT id, extraction_run_id, source_hash, name, thesis, category, direction,
+        SELECT id, extraction_run_id, source_hash, version, name, thesis, category, direction,
                entry_rule, exit_rule, warmup_requirement, simultaneous_entry_exit_behavior,
                reversal_behavior, status, status_reason, created_at
         FROM strategy_drafts WHERE id = %s

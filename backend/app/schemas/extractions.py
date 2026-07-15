@@ -38,6 +38,7 @@ class DraftRead(BaseModel):
     id: UUID
     extraction_run_id: UUID
     source_hash: str
+    version: int
     name: str
     thesis: str
     category: str

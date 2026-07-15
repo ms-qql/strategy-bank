@@ -144,12 +144,29 @@ export function QuellenView() {
             if (state?.kind === "loaded") {
               const details = new Map(state.details);
               details.set(runId, detail);
-              next.set(sourceId, { ...state, details });
+              next.set(sourceId, {
+                ...state,
+                runs: state.runs.map((run) =>
+                  run.id === runId
+                    ? { ...run, status: detail.status, finished_at: detail.finished_at, error_message: detail.error_message }
+                    : run,
+                ),
+                details,
+              });
             }
             return next;
           });
           if (detail.status === "läuft") {
             schedulePoll(runId, sourceId);
+          } else {
+            updateSourceStatus(
+              sourceId,
+              detail.status === "abgeschlossen"
+                ? "extrahiert"
+                : detail.status === "keine Treffer"
+                  ? "extrahiert, keine Treffer"
+                  : "Extraktion fehlgeschlagen",
+            );
           }
         } catch {
           schedulePoll(runId, sourceId);
@@ -157,7 +174,7 @@ export function QuellenView() {
       }, POLL_MS);
       pollHandles.current.set(runId, handle);
     },
-    [loadRunDetail],
+    [loadRunDetail, updateSourceStatus],
   );
 
   const fetchExtractions = useCallback(

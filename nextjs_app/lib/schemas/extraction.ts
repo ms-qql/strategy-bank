@@ -56,6 +56,7 @@ export const draftSchema = z.object({
   id: z.string(),
   extraction_run_id: z.string(),
   source_hash: z.string(),
+  version: z.number().int().positive(),
   name: z.string(),
   thesis: z.string(),
   category: z.string(),

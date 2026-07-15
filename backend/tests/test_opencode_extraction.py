@@ -53,6 +53,22 @@ def test_normalize_strategy_forces_parameters_as_proposal():
     assert normalized["parameters"][0]["is_proposal"] is True
 
 
+def test_normalize_strategy_versions_and_locks_missing_rule_citations():
+    normalized = svc._normalize_strategy(
+        {
+            "entry_rule": "a",
+            "exit_rule": "b",
+            "warmup_requirement": "14",
+            "simultaneous_entry_exit_behavior": "exit wins",
+            "reversal_behavior": "close first",
+            "citations": [{"rule_field": "entry_rule", "excerpt": "a"}],
+        }
+    )
+    assert normalized["version"] == 1
+    assert normalized["status"] == "gesperrt (unvollständig)"
+    assert "exit_rule" in normalized["status_reason"]
+
+
 def test_execute_extraction_persists_drafts_on_success(monkeypatch):
     fake_output = """```json
 {"strategies": [{
@@ -61,7 +77,13 @@ def test_execute_extraction_persists_drafts_on_success(monkeypatch):
     "warmup_requirement": "14 Perioden", "simultaneous_entry_exit_behavior": "n/a",
     "reversal_behavior": "n/a", "status": "Entwurf", "status_reason": null,
     "parameters": [{"name": "Länge", "value": "14", "unit": "Perioden", "allowed_range": "1-100"}],
-    "citations": [{"rule_field": "entry_rule", "excerpt": "RSI < 30", "line_reference": "Zeile 1"}],
+    "citations": [
+        {"rule_field": "entry_rule", "excerpt": "RSI < 30", "line_reference": "Zeile 1"},
+        {"rule_field": "exit_rule", "excerpt": "RSI > 70", "line_reference": "Zeile 2"},
+        {"rule_field": "warmup_requirement", "excerpt": "14 Perioden", "line_reference": "Zeile 3"},
+        {"rule_field": "simultaneous_entry_exit_behavior", "excerpt": "n/a", "line_reference": "Zeile 4"},
+        {"rule_field": "reversal_behavior", "excerpt": "n/a", "line_reference": "Zeile 5"}
+    ],
     "open_questions": []
 }]}
 ```"""
@@ -89,6 +111,7 @@ def test_execute_extraction_persists_drafts_on_success(monkeypatch):
     drafts = run_query("SELECT * FROM strategy_drafts WHERE extraction_run_id = %s", [run["id"]])
     assert len(drafts) == 1
     assert drafts[0]["name"] == "Test-Strategie"
+    assert drafts[0]["version"] == 1
     params = run_query("SELECT * FROM draft_parameters WHERE draft_id = %s", [drafts[0]["id"]])
     assert params[0]["is_proposal"] is True
 

@@ -73,7 +73,7 @@ export function EntwurfCard({ draft }: Props) {
     <div className="rounded-lg border border-border bg-card p-4 text-sm">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h4 className="text-base font-medium leading-tight">{draft.name}</h4>
+          <h4 className="text-base font-medium leading-tight">{draft.name} · v{draft.version}</h4>
           {draft.thesis && (
             <p className="mt-1 text-muted-foreground">{draft.thesis}</p>
           )}

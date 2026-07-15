@@ -17,7 +17,13 @@ from ..db import run_command, transaction
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
-_REQUIRED_LOCKED_FIELDS = ["entry_rule", "exit_rule"]
+_REQUIRED_LOCKED_FIELDS = [
+    "entry_rule",
+    "exit_rule",
+    "warmup_requirement",
+    "simultaneous_entry_exit_behavior",
+    "reversal_behavior",
+]
 
 
 def build_prompt(source_content: str) -> str:
@@ -185,6 +191,13 @@ def _normalize_strategy(raw: dict) -> dict:
             }
         )
 
+    citation_fields = {c["rule_field"].split(".", 1)[0] for c in citations if c["excerpt"].strip()}
+    missing_citations = [field for field in _REQUIRED_LOCKED_FIELDS if field not in citation_fields]
+    if missing_citations:
+        status = "gesperrt (unvollständig)"
+        hint = f"Fehlende Quellenbeleg(e): {', '.join(missing_citations)}."
+        status_reason = f"{status_reason} {hint}".strip() if status_reason else hint
+
     open_questions = []
     for q in raw.get("open_questions") or []:
         if not isinstance(q, dict):
@@ -197,6 +210,7 @@ def _normalize_strategy(raw: dict) -> dict:
         )
 
     return {
+        "version": 1,
         "name": str(raw.get("name") or "Unbenannte Strategie"),
         "thesis": str(raw.get("thesis") or ""),
         "category": category,
@@ -254,16 +268,17 @@ def execute_extraction(run_id: UUID, source_id: UUID, source_content: str, sourc
                 cur.execute(
                     """
                     INSERT INTO strategy_drafts (
-                        extraction_run_id, source_hash, name, thesis, category, direction,
+                        extraction_run_id, source_hash, version, name, thesis, category, direction,
                         entry_rule, exit_rule, warmup_requirement,
                         simultaneous_entry_exit_behavior, reversal_behavior,
                         status, status_reason
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id
                     """,
                     [
                         run_id,
                         source_hash,
+                        normalized["version"],
                         normalized["name"],
                         normalized["thesis"],
                         normalized["category"],

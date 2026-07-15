@@ -120,6 +120,7 @@ FastAPI-Backend in `backend/`, untracked im Working Tree (committed in `master` 
 
 **Neue/geänderte Dateien:**
 - `backend/sql/002_extraction.sql` — 5 Tabellen: `extraction_runs`, `strategy_drafts`, `draft_parameters`, `draft_source_citations`, `draft_open_questions` (jeweils FK-CASCADE, Indizes auf FK-Spalten, CHECK-Constraints für Status-Enums).
+- `backend/sql/003_draft_version.sql` — ergänzt `strategy_drafts.version` für bereits migrierte Datenbanken.
 - `backend/app/constants.py` — `CATEGORIES` (feste Liste), `FALLBACK_CATEGORY="Sonstige"`, `DIRECTIONS`.
 - `backend/app/config.py` — `opencode_binary`, `extraction_model`, `extraction_prompt_version`, `extraction_timeout_seconds` (300s, pydantic-settings).
 - `backend/app/schemas/extractions.py` — `ExtractionRunListItem`, `ExtractionRunDetail` (extends mit `drafts`), `DraftRead` (mit `parameters`/`citations`/`open_questions`), `ParameterRead`, `CitationRead`, `OpenQuestionRead`, `CategoryList`.
@@ -211,6 +212,13 @@ Next.js 16 (App Router) + shadcn/ui (`base-nova`, neutral) in `nextjs_app/`. Erw
 - **Bugs:** 3 High, 0 Critical, 0 Medium, 0 Low.
 - **Production Ready:** **NO** — High-Bugs blockieren die Kernanzeige, den Entwurfsvertrag und den Secret-Schutz.
 - **Status:** bleibt **In Review**.
+
+### Re-QA nach Fix (2026-07-15)
+
+- **BUG-1 resolved:** Polling aktualisiert jetzt Lauf- und Quellenstatus. Terminale Zustände zeigen Entwürfe, „Keine Strategie …“ beziehungsweise Fehler/Retry statt dauerhaft „Extraktion läuft“.
+- **BUG-2 resolved:** Jeder Entwurf startet serverseitig mit `version=1`. Fehlende Regelangaben oder Quellenbelege für Entry, Exit, Warm-up, simultanes Verhalten und Reversal sperren den Entwurf mit konkreter Begründung. Migration `003_draft_version.sql` aktualisiert bestehende Datenbanken.
+- **Regression:** 37/37 Backend-Tests, Next.js-Lint und Production-Build grün.
+- **Offen:** BUG-3 (Provider-Fehlertext) bleibt High; Status daher weiter **In Review** und Production Ready **NO**.
 
 ## Deployment
 _To be added by /deploy_

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS strategy_drafts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     extraction_run_id UUID NOT NULL REFERENCES extraction_runs (id) ON DELETE CASCADE,
     source_hash TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
     name TEXT NOT NULL,
     thesis TEXT NOT NULL,
     category TEXT NOT NULL CHECK (category IN (
