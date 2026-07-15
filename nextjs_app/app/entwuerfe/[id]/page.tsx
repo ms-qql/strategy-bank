@@ -2,6 +2,8 @@
 
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { z } from "zod";
+import { apiGet, apiPatch, apiPostJson, apiDelete, ApiError } from "@/lib/api-client";
 import {
   ArrowLeft,
   BookOpen,
@@ -11,7 +13,6 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { apiGet, apiPatch, apiPostJson, apiDelete, ApiError } from "@/lib/api-client";
 import { draftSchema, type Draft, type Parameter } from "@/lib/schemas/extraction";
 import {
   versionListItemSchema,
@@ -114,13 +115,13 @@ export default function EntwurfEditPage() {
   const [thesis, setThesis] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [direction, setDirection] = useState("kombiniert");
-  const [entryRule, setEntryRule] = useState("");
-  const [exitRule, setExitRule] = useState("");
-  const [warmup, setWarmup] = useState("");
-  const [simulBehavior, setSimulBehavior] = useState("");
-  const [reversalBehavior, setReversalBehavior] = useState("");
+  const [entryRule, setEntryRule] = useState<string | null>(null);
+  const [exitRule, setExitRule] = useState<string | null>(null);
+  const [warmup, setWarmup] = useState<string | null>(null);
+  const [simulBehavior, setSimulBehavior] = useState<string | null>(null);
+  const [reversalBehavior, setReversalBehavior] = useState<string | null>(null);
   const [parameters, setParameters] = useState<
-    { name: string; value: string; unit: string; allowed_range: string; is_proposal: boolean }[]
+    { name: string; value: string; unit: string | null; allowed_range: string | null; is_proposal: boolean }[]
   >([]);
 
   // Versions
@@ -287,7 +288,7 @@ export default function EntwurfEditPage() {
   const addParameter = () => {
     setParameters([
       ...parameters,
-      { name: "", value: "", unit: "", allowed_range: "", is_proposal: false },
+      { name: "", value: "", unit: null, allowed_range: null, is_proposal: false },
     ]);
   };
 
@@ -428,7 +429,7 @@ export default function EntwurfEditPage() {
               <Label htmlFor="entry_rule">Entry-Regel</Label>
               <Textarea
                 id="entry_rule"
-                value={entryRule}
+                value={entryRule ?? ""}
                 onChange={(e) => setEntryRule(e.target.value)}
                 disabled={isReadOnly}
                 rows={3}
@@ -439,7 +440,7 @@ export default function EntwurfEditPage() {
               <Label htmlFor="exit_rule">Exit-Regel</Label>
               <Textarea
                 id="exit_rule"
-                value={exitRule}
+                value={exitRule ?? ""}
                 onChange={(e) => setExitRule(e.target.value)}
                 disabled={isReadOnly}
                 rows={3}
@@ -453,7 +454,7 @@ export default function EntwurfEditPage() {
               <Label htmlFor="warmup">Warm-up</Label>
               <Input
                 id="warmup"
-                value={warmup}
+                value={warmup ?? ""}
                 onChange={(e) => setWarmup(e.target.value)}
                 disabled={isReadOnly}
                 placeholder="z. B. 0 bars"
@@ -463,7 +464,7 @@ export default function EntwurfEditPage() {
               <Label htmlFor="simul">Gleichzeitiger Entry/Exit</Label>
               <Input
                 id="simul"
-                value={simulBehavior}
+                value={simulBehavior ?? ""}
                 onChange={(e) => setSimulBehavior(e.target.value)}
                 disabled={isReadOnly}
               />
@@ -472,7 +473,7 @@ export default function EntwurfEditPage() {
               <Label htmlFor="reversal">Reversal-Verhalten</Label>
               <Input
                 id="reversal"
-                value={reversalBehavior}
+                value={reversalBehavior ?? ""}
                 onChange={(e) => setReversalBehavior(e.target.value)}
                 disabled={isReadOnly}
               />
@@ -553,7 +554,7 @@ export default function EntwurfEditPage() {
                         <span className="text-muted-foreground">{p.unit || "—"}</span>
                       ) : (
                         <Input
-                          value={p.unit}
+                          value={p.unit ?? ""}
                           onChange={(e) => updateParameter(idx, "unit", e.target.value)}
                           className="h-8 text-sm"
                           placeholder="—"
@@ -565,7 +566,7 @@ export default function EntwurfEditPage() {
                         <span className="text-muted-foreground">{p.allowed_range || "—"}</span>
                       ) : (
                         <Input
-                          value={p.allowed_range}
+                          value={p.allowed_range ?? ""}
                           onChange={(e) => updateParameter(idx, "allowed_range", e.target.value)}
                           className="h-8 text-sm"
                           placeholder="—"
