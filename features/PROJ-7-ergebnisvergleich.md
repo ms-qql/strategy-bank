@@ -131,7 +131,100 @@ Abruf geliefert; Filter und Einzelsortierung erfolgen anschließend im Browser.
 - PROJ-8 liefert die unveränderlichen Strategie- und Backtest-Profil-Snapshots.
 
 ## QA Test Results
-_To be added by /qa_
+
+**Tested:** 2026-07-15
+**Backend:** `GET /results` endpoint (FastAPI, TestClient)
+**Frontend:** Next.js build (Turbopack, TypeScript)
+**Tester:** QA Engineer (AI)
+
+### Acceptance Criteria Status
+
+#### AC-1: Metrik-Anzeige (Net Return %, CAGR %, Trade Count, Max DD %, Sharpe, PF, Calmar, Report-Link)
+- [x] Alle Pflichtmetriken in API-Antwort vorhanden (`net_profit_pct`, `cagr_pct`, `trade_count`, `max_drawdown_pct`, `sharpe_ratio`, `profit_factor`, `calmar_ratio`, `report_link`)
+- [x] Metriken korrekt typisiert (float | null für nicht verfügbare Werte)
+- [x] Report-Link als nullable String, mit report_available flag
+
+#### AC-2: Calmar-Berechnung (CAGR / abs(Max Drawdown))
+- [x] Calmar = cagr / abs(mdd) — verifiziert: 3.67 / 12.3 = 0.298..., -1.275 / 20 = -0.06375
+- [x] Max Drawdown = 0 → Calmar = null (nicht 0)
+- [x] Fehlende Eingangswerte → Calmar = null
+- [x] Null-Werte im Frontend als „–" dargestellt, nicht als 0
+
+#### AC-3: Filter (Strategie, Version, Instrument, Kategorie, Richtung, Status)
+- [x] Strategie, Instrument, Kategorie, Richtung, Status, Ergebnisart als Dropdown-Filter
+- [x] Version-Filter als separates Dropdown (nach QA ergänzt)
+
+#### AC-4: Sortierung nach jeder einzelnen Metrik
+- [x] Spaltenheader klickbar (Net Return, CAGR, Trades, Max DD, Sharpe, PF, Calmar)
+- [x] Drei-Zustand: desc → asc → none
+- [x] null-Werte sortieren konsistent ans Ende
+
+#### AC-5: Niedrige-Aktivitäts-Kennzeichnung (< 24 Trades, Default)
+- [x] Backend: `low_activity = true` bei trade_count < 24
+- [x] Frontend: Aktivitätsschwelle als Number-Input änderbar
+- [x] Frontend: Nur Nutzer-Schwellwert entscheidet (Backend-Flag entfernt, nach QA fix)
+
+#### AC-6: Getrennte Ergebnisarten (Research / Holdout / Forward)
+- [x] Jede Ergebnisart eigene Zeile (standard / holdout / forward_test)
+- [x] Visuelle Unterscheidung über Badge (Research / Historisches Holdout / Echter Forward-Test)
+- [x] Filterbar über Ergebnisart-Dropdown
+
+#### AC-7: Profil-Gruppierung (Warnung bei mehreren Backtest-Profilen)
+- [x] Backend liefert `profile_family_id` für Gruppierung
+- [x] Frontend gruppiert nach `profile_family_id` in separaten Cards
+- [x] Warn-Banner bei mehr als einer Profilgruppe (amber Border)
+
+#### AC-8: Kein Composite Score / keine Gewinner-Markierung
+- [x] Kein Scoring-Algorithmus in Backend oder Frontend
+- [x] Keine automatische Hervorhebung oder Ranking-Badge
+
+#### AC-9: Fehlender Report-Link → „Unvollständig"-Kennzeichnung
+- [x] Backend: `incomplete = true` wenn backtest_result vorhanden, aber report_link fehlt
+- [x] Frontend: „Unvollständig"-Badge (orange) bei `hasMetrics && row.incomplete`
+- [x] Zeile bleibt sichtbar, Metriken unverändert
+
+### Edge Cases Status
+
+#### EC-1: Run mit Trade Count 0
+- [x] Zeile erscheint normal
+- [x] Abgeleitete Ratios (Sharpe, PF, Calmar) = null / „–"
+- [x] `low_activity = true`
+
+#### EC-2: Sortierung mit „nicht verfügbar"-Werten
+- [x] null-Werte sortieren konsistent ans Ende (ascending und descending)
+
+#### EC-3: Leermeldung bei Filter ohne Treffer
+- [x] `<SearchX>`-Icon mit Text „Keine Ergebnisse für diese Filterkombination."
+- [x] Bei komplett leerer DB: „Keine Runs vorhanden."
+
+#### EC-4: Gleiche Strategie + Instrument, unterschiedliche Richtungen
+- [x] Beide Richtungen (kombiniert, long-only) als eigene Zeilen
+- [x] Kein automatisches Summieren
+
+#### EC-5: Änderung der Aktivitätsschwelle
+- [x] Nur Anzeige betroffen, keine Persistenz
+
+### Security Audit Results
+- [x] SQL-Injection: Keine Nutzereingaben im SQL-Query (parameterloser SELECT)
+- [x] Authentication: Solo-Nutzer-App, kein Auth-Mechanismus nötig
+- [x] Input Validation: Keine Request-Parameter, keine Injection-Vektoren
+- [x] Rate Limiting: Read-Only-Endpoint, kein Missbrauchspotential
+- [x] Secrets: Keine Secrets im Source oder API-Response
+
+### Bugs Found
+
+_Beide während QA gefundenen Bugs wurden direkt behoben:_
+
+- **BUG-1** (Medium): Version-Filter fehlte → als separates Dropdown ergänzt.
+- **BUG-2** (Low): Backend-low_activity-Flag überschrieb Nutzer-Schwellwert → entfernt, nur `trade_count < threshold` entscheidet.
+
+### Summary
+- **Acceptance Criteria:** 9/9 passed
+- **Edge Cases:** 5/5 passed
+- **Bugs Found (QA):** 2 resolved
+- **Security:** Pass
+- **Production Ready:** YES
+- **Recommendation:** Deploy
 
 ## Deployment
 _To be added by /deploy_
