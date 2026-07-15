@@ -1,8 +1,9 @@
 # PROJ-9: Markdown-Export
 
-## Status: Implemented
+## Status: Deployed
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
+**Deployed:** 2026-07-15 · **v0.2.5**
 
 ## Implementation Notes
 - Route: `GET /drafts/{draft_id}/export.md` in `backend/app/routes/export.py`

@@ -1,6 +1,6 @@
 # PROJ-7: Ergebnisvergleich
 
-## Status: Architected
+## Status: Deployed
 **Created:** 2026-07-15
 **Last Updated:** 2026-07-15
 
@@ -227,4 +227,4 @@ _Beide während QA gefundenen Bugs wurden direkt behoben:_
 - **Recommendation:** Deploy
 
 ## Deployment
-_To be added by /deploy_
+**Deployed:** 2026-07-15 · **Version:** v0.2.5
