@@ -1,6 +1,6 @@
 # PROJ-14: Markdown-Drag-and-Drop in der Quellenerfassung
 
-## Status: Architected
+## Status: Approved (Frontend + QA passed)
 **Created:** 2026-07-16
 **Last Updated:** 2026-07-16
 
@@ -124,8 +124,115 @@ Markdown-Datei ablegen.“.
 - **Backend:** keine neuen Pakete und keine Route-Änderung
 - **Datenbank/Storage:** keine Migration, keine neue Tabelle, kein MinIO
 
+## Implementation Notes
+- `nextjs_app/components/quellen/markdown-dropzone.tsx` (neu): kapselt Dropzone + versteckten nativen Dateidialog. Klick, Enter, Leertaste öffnen den Dialog. Drag-Over zeigt Aktivzustand, Drop prüft früh (eine Datei, `.md`, ≤ 2 MB, nicht leer) und meldet Fehler über den bestehenden Alert-Pfad.
+- `nextjs_app/components/quellen/quellen-view.tsx`: ersetzt das sichtbare `<Input type="file" />` durch die Dropzone; bestehende `datei`-State und `handleSubmit` bleiben verbindlich. Neuer Window-Listener verhindert Browser-Navigation bei Datei-Drops außerhalb der Dropzone, lässt Klicks, Textauswahl und Nicht-Datei-Drags unberührt.
+- Validierung läuft früh clientseitig mit identischen Meldungen wie der bestehende Dialog (`Nur .md-Dateien werden unterstützt.`, `Quelle enthält keinen Inhalt.`, `Datei überschreitet das Größenlimit von 2 MB.`); die Spezialmeldung `Bitte genau eine Markdown-Datei ablegen.` greift ausschließlich bei Mehrfach-Drop.
+
 ## QA Test Results
-_To be added by /abc-qa_
+
+**Tested:** 2026-07-16
+**Backend:** http://localhost:8200 (FastAPI, `Dashboard`-env, strategy_bank)
+**Frontend:** http://localhost:3120 (`next start`, prod build)
+**Tester:** QA Engineer (AI) — Playwright 1.61.1 (headless Chromium)
+**Harness:** `screenshots/test/proj14-dropzone.cjs` (16 Tests, 0 fehlgeschlagen, 2 Re-Runs idempotent)
+
+### Acceptance Criteria Status
+
+#### AC-1: Ablagefeld mit Pflichttext sichtbar
+- [x] Tab „Markdown-Datei" zeigt Dropzone mit Text „Markdown-Datei hier ablegen oder auswählen"
+- [x] Icon (`file-up`) und Hinweis „Genau eine .md-Datei, maximal 2 MB." als Sekundärtext
+- Screenshot: `screenshots/test/proj14-ac1-dropzone.png`
+
+#### AC-2: Drop wählt aus, kein Auto-Save / Auto-Extract
+- [x] Drop einer gültigen `.md`-Datei setzt den Auswahlzustand (Summary `Ausgewählt: valid.md (1 KB)` sichtbar)
+- [x] Quellenliste unverändert, kein POST auf `/sources`, keine Extraktion angestoßen
+- Screenshot: `screenshots/test/proj14-ac2-selected.png`
+
+#### AC-3: Klick + Enter + Leertaste öffnen Dateidialog
+- [x] Klick auf Dropzone löst `filechooser` aus
+- [x] Enter auf fokussierter Dropzone löst `filechooser` aus
+- [x] Leertaste auf fokussierter Dropzone löst `filechooser` aus
+- Hinweis: Pro Trigger in eigenem Browser-Kontext (sonst blockt das Schließen des ersten Choosers den zweiten)
+
+#### AC-4: Sichtbarer Aktivzustand während Drag
+- [x] `data-drag-active` wechselt von `false` → `true` bei `dragover`
+- [x] Visuell: Rahmen in `primary` (teal), Hintergrund `primary/10`
+- Screenshot: `screenshots/test/proj14-ac4-drag-active.png`
+
+#### AC-5: Name + Größe sichtbar, neue Auswahl ersetzt
+- [x] Erste Auswahl `first.md` sichtbar
+- [x] Zweite Auswahl `second.md` ersetzt die erste; nur noch `second.md` sichtbar
+- [x] Größenangabe in KB gerundet
+
+#### AC-6: Gemeinsame Regeln für Drop und Dialog
+- [x] Falsche Endung (`foo.txt`) → `Nur .md-Dateien werden unterstützt.`
+- [x] Leere Datei (`empty.md`, 0 Bytes) → `Quelle enthält keinen Inhalt.`
+- [x] > 2 MB → `Datei überschreitet das Größenlimit von 2 MB.`
+- Hinweis: UTF-8-Prüfung läuft verbindlich im Backend (`source_text = raw_bytes.decode("utf-8")`)
+
+#### AC-7: Drop außerhalb navigiert nicht
+- [x] `drop` auf `<main>` löst keine Navigation aus, URL bleibt `/quellen`
+- [x] Window-Listener ruft `preventDefault()` nur für echte Datei-Drags (`dataTransfer.types.includes("Files")`); Klicks und Textauswahl unberührt
+
+#### AC-8: Klartext-Erfassung unverändert, keine Kombination mit Datei
+- [x] Text im Klartext-Tab bleibt beim Wechsel auf Datei-Tab erhalten
+- [x] Wechsel zurück liefert den ursprünglichen Text unverändert
+- [x] Speichern funktioniert weiterhin (Regression-Test PROJ-1: Quelleneintrag wuchs nach Speichern)
+
+### Edge Cases Status
+
+#### EC-1: Mehrere Dateien gleichzeitig
+- [x] Drop von 2 Dateien → `Bitte genau eine Markdown-Datei ablegen.` (Spezialtext)
+- [x] Keine Datei wird ausgewählt (`getSelectedFileSummary` = null)
+
+#### EC-2: Falsche Endung
+- [x] Abgelehnt mit `Nur .md-Dateien werden unterstützt.`
+
+#### EC-3: > 2 MB oder leer
+- [x] Bestehende deutsche Meldungen greifen (siehe AC-6)
+
+#### EC-4: Ordner-Drop
+- [x] Leere `dataTransfer.files` (Folder-Zugriff nicht möglich) → `Nur .md-Dateien werden unterstützt.`
+
+#### EC-5: Valide nach invalide
+- [x] Vorheriger Fehler `Nur .md-Dateien…` wird durch valides Drop entfernt
+- [x] Gültige Datei ist sichtbar ausgewählt
+
+### Security Audit Results
+- [x] XSS via Dateiname: React rendert Dateinamen als Textknoten; `body.textContent` enthält den Original-String, `body.innerHTML` enthält ihn escaped; kein gerendertes `<img onerror>`-Element
+- [x] XSS via Datei-Inhalt: Inhalt wird nur an Backend gesendet; UI rendert keinen Markdown-Body (Datei-Inhalt ist nicht im DOM)
+- [x] Kein `dangerouslySetInnerHTML` mit User-Daten (nur statisches Theme-Script in `app/layout.tsx`)
+- [x] Globales Drop-Handling: Verhindert Browser-Navigation ohne Klicks / Textauswahl / Nicht-Datei-Drags zu blockieren
+- [x] Tab-Wechsel räumt Fehlerzustand (kein Stale-State-Risiko zwischen Tabs)
+- N/A Auth / Tenants: Solo-App laut Backend-Kommentar (`main.py: "kein Mandant/RLS"`)
+
+### Regression
+- [x] PROJ-1: Klartext-Speichern funktioniert (neuer Quelleneintrag erscheint in Tabelle)
+- [x] Bestehende Quellenliste, Extraktions-Buttons, Entwurfskarten unverändert
+- [x] Sidebar-Navigation (Quellen / Backtests / Ergebnisse / Einstellungen) nicht betroffen
+- [x] Tab-Wechsel `Text einfügen` ↔ `Markdown-Datei` ohne Datenverlust
+
+### Responsive
+- [x] 375 px (Mobile): Dropzone zentriert, Text umbricht sauber
+- [x] 768 px (Tablet): Dropzone voll sichtbar
+- Screenshots: `proj14-responsive-mobile.png`, `proj14-responsive-tablet.png`
+
+### Bugs Found
+
+Keine.
+
+### Summary
+- **Acceptance Criteria:** 8/8 passed
+- **Edge Cases:** 5/5 passed
+- **Security:** Pass (XSS via Dateiname + Inhalt ausgeschlossen, Tab-Wechsel-State sauber)
+- **Regression:** Pass (PROJ-1-Klartext-Pfad funktional)
+- **Responsive:** Pass (375 / 768 / 1440)
+- **Production Ready:** YES
+- **Recommendation:** Deploy via `/abc-deploy`
+
+### Test-Harness
+`node screenshots/test/proj14-dropzone.cjs` — 16 assertions, idempotent, headless Chromium 1440×900 (plus 375/768 für Responsive). Voraussetzungen: Next.js `next start -p 3120` mit `BACKEND_URL=http://localhost:8200` und FastAPI-Backend auf `:8200`.
 
 ## Deployment
 _To be added by /abc-deploy_
