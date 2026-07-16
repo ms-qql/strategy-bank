@@ -26,6 +26,7 @@ from .opencode_extraction import run_opencode
 _PINE_FENCE_RE = re.compile(r"```(?:pine|pinescript)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 _VERSION_TAG_RE = re.compile(r"^//\s*@version\s*=\s*5")
 _INVALID_STRATEGY_MEMBER_RE = re.compile(r"\bstrategy\s*\.\s*(?:signal_reversal|entry_exit)\b")
+_INVALID_TA_BUILTIN_RE = re.compile(r"\bta\s*\.\s*adx\s*\(")
 
 
 class PineGenerationError(Exception):
@@ -86,6 +87,7 @@ Anforderungen an das Script:
 - Richtung `long-only`/`short-only` nur in die jeweilige Richtung eröffnen; `kombiniert`
   darf beide Richtungen nehmen.
 - Bei fehlender Exit-Regel: sauberer Bar-Count-Failsafe statt endlos offener Position.
+- `ta.adx(...)` existiert NICHT als Pine-Built-in — für ADX `[diplus, diminus, adx] = ta.dmi(diLength, adxLength)` verwenden.
 
 Antworte AUSSCHLIESSLICH mit einem einzigen ```pine-Codeblock (kein Text davor/danach),
 der mit `//@version=5` beginnt."""
@@ -94,7 +96,11 @@ der mit `//@version=5` beginnt."""
 def _extract_pine(raw_text: str) -> str:
     matches = _PINE_FENCE_RE.findall(raw_text)
     candidate = matches[-1].strip() if matches else raw_text.strip()
-    if not _VERSION_TAG_RE.search(candidate) or _INVALID_STRATEGY_MEMBER_RE.search(candidate):
+    if (
+        not _VERSION_TAG_RE.search(candidate)
+        or _INVALID_STRATEGY_MEMBER_RE.search(candidate)
+        or _INVALID_TA_BUILTIN_RE.search(candidate)
+    ):
         return ""
     return candidate
 

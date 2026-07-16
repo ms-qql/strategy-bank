@@ -66,6 +66,10 @@ class TestExtractPine:
         raw = '//@version=5\nstrategy("x")\nstrategy.signal_reversal'
         assert pg._extract_pine(raw) == ""
 
+    def test_rejects_nonexistent_ta_adx_builtin(self):
+        raw = '//@version=5\nstrategy("x")\nadx = ta.adx(14, 14)'
+        assert pg._extract_pine(raw) == ""
+
 
 class TestGenerate:
     def test_missing_entry_raises(self):
