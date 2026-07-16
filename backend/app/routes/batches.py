@@ -128,9 +128,10 @@ def _validate_strategy_versions(strategy_version_ids: list[UUID]) -> None:
 
 
 def _validate_direction_modes(modes: list[str]) -> None:
-    invalid = [m for m in modes if m not in DIRECTION_MODES]
-    if invalid:
-        raise HTTPException(422, f"Ungültiger Richtungsmodus: {', '.join(invalid)}")
+    if len(modes) != 1:
+        raise HTTPException(422, "Bitte genau einen Richtungsmodus wählen.")
+    if modes[0] not in DIRECTION_MODES:
+        raise HTTPException(422, f"Ungültiger Richtungsmodus: {modes[0]}")
 
 
 def _create_batch(
@@ -351,6 +352,7 @@ def confirm_batch(batch_id: UUID, body: BatchConfirmIn) -> dict:
     strategy_version_ids, instruments, direction_modes = _batch_children(batch_id)
     if not (strategy_version_ids and instruments and direction_modes):
         raise HTTPException(422, "Batch ist unvollständig — Strategieversion, Instrument und Richtungsmodus erforderlich.")
+    _validate_direction_modes(direction_modes)
 
     planned_actions = len(strategy_version_ids) * len(instruments) * len(direction_modes)
     if body.credit_max < planned_actions:

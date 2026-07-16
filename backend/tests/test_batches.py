@@ -155,13 +155,27 @@ class TestBatchCreateAndPreview:
             json={
                 "backtest_profile_id": profile["id"],
                 "strategy_version_ids": [v1["id"], v2["id"]],
-                "direction_modes": ["kombiniert", "long-only"],
             },
         )
         batch = resp.json()
         preview = client.get(f"/batches/{batch['id']}/preview").json()
-        # 2 Strategieversionen x 3 Instrumente (Default) x 2 Richtungsmodi
-        assert len(preview) == 4
+        # 2 Strategieversionen x 1 Instrument (Default) x 1 Richtungsmodus (Default)
+        assert len(preview) == 2
+
+    def test_multi_direction_modes_rejected_422(self, client):
+        profile = _make_profile(client)
+        v1 = _make_frozen_version(client)
+        v2 = _make_frozen_version(client)
+        resp = client.post(
+            "/batches",
+            json={
+                "backtest_profile_id": profile["id"],
+                "strategy_version_ids": [v1["id"], v2["id"]],
+                "direction_modes": ["kombiniert", "long-only"],
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "genau einen Richtungsmodus" in resp.json()["detail"]
 
     def test_unknown_strategy_version_rejected(self, client):
         profile = _make_profile(client)
@@ -171,7 +185,7 @@ class TestBatchCreateAndPreview:
         )
         assert resp.status_code == 422
 
-    def test_explicit_empty_instruments_and_modes_not_replaced_with_defaults(self, client):
+    def test_explicit_empty_instruments_kept(self, client):
         profile = _make_profile(client)
         version = _make_frozen_version(client)
         resp = client.post(
@@ -180,13 +194,26 @@ class TestBatchCreateAndPreview:
                 "backtest_profile_id": profile["id"],
                 "strategy_version_ids": [version["id"]],
                 "instruments": [],
-                "direction_modes": [],
             },
         )
         assert resp.status_code == 201, resp.text
         batch = resp.json()
         assert batch["instruments"] == []
-        assert batch["direction_modes"] == []
+        assert batch["direction_modes"] == ["kombiniert"]
+
+    def test_explicit_empty_direction_modes_rejected_422(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        resp = client.post(
+            "/batches",
+            json={
+                "backtest_profile_id": profile["id"],
+                "strategy_version_ids": [version["id"]],
+                "direction_modes": [],
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "genau einen Richtungsmodus" in resp.json()["detail"]
 
     def test_standard_batch_allows_later_period_end(self, client):
         profile = _make_profile(client)
@@ -429,3 +456,167 @@ class TestHoldoutForwardTest:
             json={"backtest_profile_id": profile["id"]},
         )
         assert resp.status_code == 404
+
+
+class TestDirectionModeValidation:
+    """PROJ-18: Schreibwege akzeptieren ausschließlich eine Liste mit genau einem
+    bekannten Richtungsmodus. Fehlt das Feld, gilt `kombiniert`. Leere oder
+    mehrfache Auswahl liefert 422."""
+
+    def test_post_without_field_defaults_to_kombiniert(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        resp = client.post(
+            "/batches",
+            json={
+                "backtest_profile_id": profile["id"],
+                "strategy_version_ids": [version["id"]],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["direction_modes"] == ["kombiniert"]
+
+    def test_post_with_single_known_mode_accepted(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        for mode in ("kombiniert", "long-only", "short-only"):
+            resp = client.post(
+                "/batches",
+                json={
+                    "backtest_profile_id": profile["id"],
+                    "strategy_version_ids": [version["id"]],
+                    "direction_modes": [mode],
+                },
+            )
+            assert resp.status_code == 201, resp.text
+            assert resp.json()["direction_modes"] == [mode]
+
+    def test_post_with_empty_list_rejected_422(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        resp = client.post(
+            "/batches",
+            json={
+                "backtest_profile_id": profile["id"],
+                "strategy_version_ids": [version["id"]],
+                "direction_modes": [],
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "genau einen Richtungsmodus" in resp.json()["detail"]
+
+    def test_post_with_multiple_modes_rejected_422(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        resp = client.post(
+            "/batches",
+            json={
+                "backtest_profile_id": profile["id"],
+                "strategy_version_ids": [version["id"]],
+                "direction_modes": ["kombiniert", "long-only"],
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "genau einen Richtungsmodus" in resp.json()["detail"]
+
+    def test_post_with_unknown_mode_rejected_422(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        resp = client.post(
+            "/batches",
+            json={
+                "backtest_profile_id": profile["id"],
+                "strategy_version_ids": [version["id"]],
+                "direction_modes": ["both-only"],
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "Ungültiger Richtungsmodus" in resp.json()["detail"]
+
+    def test_patch_with_multiple_modes_rejected_422(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        batch = client.post(
+            "/batches",
+            json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
+        ).json()
+        resp = client.patch(
+            f"/batches/{batch['id']}",
+            json={"direction_modes": ["kombiniert", "long-only"]},
+        )
+        assert resp.status_code == 422, resp.text
+        assert "genau einen Richtungsmodus" in resp.json()["detail"]
+
+    def test_patch_with_empty_list_rejected_422(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        batch = client.post(
+            "/batches",
+            json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
+        ).json()
+        resp = client.patch(f"/batches/{batch['id']}", json={"direction_modes": []})
+        assert resp.status_code == 422, resp.text
+
+    def test_patch_with_single_known_mode_accepted(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        batch = client.post(
+            "/batches",
+            json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
+        ).json()
+        resp = client.patch(f"/batches/{batch['id']}", json={"direction_modes": ["short-only"]})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["direction_modes"] == ["short-only"]
+
+    def test_holdout_batch_rejects_multi_modes_422(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        resp = client.post(
+            f"/strategy-versions/{version['id']}/holdout-batch",
+            json={
+                "backtest_profile_id": profile["id"],
+                "direction_modes": ["kombiniert", "long-only"],
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "genau einen Richtungsmodus" in resp.json()["detail"]
+
+    def test_forward_test_batch_rejects_multi_modes_422(self, client):
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        resp = client.post(
+            f"/strategy-versions/{version['id']}/forward-test-batch",
+            json={
+                "backtest_profile_id": profile["id"],
+                "direction_modes": ["kombiniert", "long-only"],
+            },
+        )
+        assert resp.status_code == 422, resp.text
+        assert "genau einen Richtungsmodus" in resp.json()["detail"]
+
+    def test_confirm_rejects_legacy_multi_mode_stored_draft(self, client):
+        """Letzte Schutzschicht: Wenn aus der Migrationsphase noch ein
+        entwurf-status Multi-Mode-Batch in der DB liegt, blockt confirm
+        die Run-Erzeugung statt unbemerkt N Runs anzulegen."""
+        profile = _make_profile(client)
+        version = _make_frozen_version(client)
+        batch = client.post(
+            "/batches",
+            json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
+        ).json()
+        run_command(
+            "DELETE FROM batch_direction_modes WHERE batch_id = %s",
+            [batch["id"]],
+        )
+        run_command(
+            "INSERT INTO batch_direction_modes (batch_id, mode) VALUES (%s, %s), (%s, %s)",
+            [batch["id"], "kombiniert", batch["id"], "long-only"],
+        )
+
+        with patch("app.routes.batches.get_credits") as mock_credits:
+            mock_credits.return_value = {
+                "balance": 1000, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000,
+            }
+            resp = client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": 1})
+        assert resp.status_code == 422, resp.text
+        assert "genau einen Richtungsmodus" in resp.json()["detail"]

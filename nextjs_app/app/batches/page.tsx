@@ -46,6 +46,51 @@ const DEFAULT_INSTRUMENTS: Instrument[] = [
   { provider_symbol: "BYBIT:BTCUSDT.P", label: "BTC" },
 ];
 
+type EditableInstrument = Instrument & { active: boolean };
+
+const INSTRUMENT_PREFERENCE_KEY = "strategy-bank.instrument-preference-v1";
+
+function readInstrumentPreference(): EditableInstrument[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(INSTRUMENT_PREFERENCE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    const seen = new Set<string>();
+    const result: EditableInstrument[] = [];
+    for (const entry of parsed) {
+      if (!entry || typeof entry !== "object") return null;
+      const symbol = (entry as { provider_symbol?: unknown }).provider_symbol;
+      if (typeof symbol !== "string" || !symbol.trim()) return null;
+      const key = symbol.trim();
+      if (seen.has(key)) return null;
+      seen.add(key);
+      const label = (entry as { label?: unknown }).label;
+      result.push({
+        provider_symbol: key,
+        label: typeof label === "string" ? label : null,
+        active: (entry as { active?: unknown }).active !== false,
+      });
+    }
+    return result.length > 0 ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeInstrumentPreference(items: EditableInstrument[]) {
+  if (typeof window === "undefined") return;
+  const cleaned = items
+    .filter((i) => i.provider_symbol.trim())
+    .map((i) => ({
+      provider_symbol: i.provider_symbol.trim(),
+      label: i.label?.trim() ? i.label.trim() : null,
+      active: i.active,
+    }));
+  window.localStorage.setItem(INSTRUMENT_PREFERENCE_KEY, JSON.stringify(cleaned));
+}
+
 const DIRECTION_MODE_LABELS: Record<string, string> = {
   kombiniert: "Kombiniert (Long & Short)",
   "long-only": "Long-only",
@@ -139,11 +184,14 @@ function BatchesPageInner() {
   const [selectedVersionIds, setSelectedVersionIds] = useState<string[]>(
     preselectVersion ? [preselectVersion] : [],
   );
-  const [instruments, setInstruments] = useState<Instrument[]>(DEFAULT_INSTRUMENTS);
+  const [instruments, setInstruments] = useState<EditableInstrument[]>(
+    DEFAULT_INSTRUMENTS.map((i) => ({ ...i, active: true })),
+  );
   const [timeframe, setTimeframe] = useState("4h");
   const [periodStart, setPeriodStart] = useState("2021-01-01");
   const [periodEnd, setPeriodEnd] = useState("2024-12-31");
-  const [directionModes, setDirectionModes] = useState<string[]>(["kombiniert"]);
+  const [directionMode, setDirectionMode] = useState<string | null>("kombiniert");
+  const [legacyDirectionModes, setLegacyDirectionModes] = useState<string[] | null>(null);
 
   const [batch, setBatch] = useState<Batch | null>(null);
   const [preview, setPreview] = useState<PreviewRun[]>([]);
@@ -191,12 +239,40 @@ function BatchesPageInner() {
           setProfiles((prev) => [...prev, referenced]);
         }
         setSelectedVersionIds(loaded.strategy_version_ids);
-        setInstruments(loaded.instruments);
+        const serverActive: EditableInstrument[] = loaded.instruments.map((i) => ({
+          provider_symbol: i.provider_symbol,
+          label: i.label ?? null,
+          active: true,
+        }));
+        if (loaded.status === "entwurf") {
+          const pref = readInstrumentPreference();
+          const serverSymbols = new Set(
+            serverActive.map((i) => i.provider_symbol.trim().toUpperCase()),
+          );
+          const inactiveFromPref: EditableInstrument[] = (pref ?? [])
+            .filter(
+              (i) => !serverSymbols.has(i.provider_symbol.trim().toUpperCase()),
+            )
+            .map((i) => ({ ...i, active: false }));
+          setInstruments([...serverActive, ...inactiveFromPref]);
+        } else {
+          setInstruments(serverActive);
+        }
         setTimeframe(loaded.timeframe);
         setPeriodStart(loaded.period_start);
         setPeriodEnd(loaded.period_end ?? "");
-        setDirectionModes(loaded.direction_modes);
+        setDirectionMode(loaded.direction_modes.length === 1 ? loaded.direction_modes[0] : null);
+        setLegacyDirectionModes(
+          loaded.status !== "entwurf" && loaded.direction_modes.length !== 1
+            ? loaded.direction_modes
+            : null,
+        );
         await refreshPreview(loaded.id);
+      } else {
+        const pref = readInstrumentPreference();
+        if (pref) {
+          setInstruments(pref);
+        }
       }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Daten konnten nicht geladen werden.");
@@ -218,23 +294,34 @@ function BatchesPageInner() {
     );
   };
 
-  const toggleDirectionMode = (mode: string) => {
-    setDirectionModes((prev) =>
-      prev.includes(mode) ? prev.filter((m) => m !== mode) : [...prev, mode],
-    );
-  };
-
   const updateInstrument = (idx: number, field: keyof Instrument, value: string) => {
     setInstruments((prev) => prev.map((i, n) => (n === idx ? { ...i, [field]: value } : i)));
   };
 
+  const toggleInstrumentActive = (idx: number) => {
+    setInstruments((prev) => prev.map((i, n) => (n === idx ? { ...i, active: !i.active } : i)));
+  };
+
   const addInstrument = () => {
-    setInstruments((prev) => [...prev, { provider_symbol: "", label: "" }]);
+    setInstruments((prev) => [...prev, { provider_symbol: "", label: "", active: true }]);
   };
 
   const removeInstrument = (idx: number) => {
     setInstruments((prev) => prev.filter((_, n) => n !== idx));
   };
+
+  const hasDuplicateProviderSymbol = (rows: EditableInstrument[]) => {
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const key = row.provider_symbol.trim();
+      if (!key) continue;
+      if (seen.has(key)) return true;
+      seen.add(key);
+    }
+    return false;
+  };
+
+  const activeInstruments = instruments.filter((i) => i.active && i.provider_symbol.trim());
 
   const handleCreateProfile = async () => {
     setCreatingProfile(true);
@@ -265,13 +352,29 @@ function BatchesPageInner() {
       setError("Bitte mindestens eine Strategieversion wählen.");
       return;
     }
+    if (!directionMode || !(DIRECTION_MODES as readonly string[]).includes(directionMode)) {
+      setError("Bitte genau einen gültigen Richtungsmodus wählen.");
+      return;
+    }
+    if (hasDuplicateProviderSymbol(instruments)) {
+      setError("Provider-Symbol ist bereits vorhanden.");
+      return;
+    }
+    const activeRows = instruments.filter((i) => i.active && i.provider_symbol.trim());
+    if (activeRows.length === 0) {
+      setError("Bitte mindestens ein Instrument aktivieren.");
+      return;
+    }
     setSaving(true);
     try {
       const body = {
         backtest_profile_id: selectedProfileId,
         strategy_version_ids: selectedVersionIds,
-        instruments: instruments.filter((i) => i.provider_symbol.trim()),
-        direction_modes: directionModes,
+        instruments: activeRows.map((i) => ({
+          provider_symbol: i.provider_symbol.trim(),
+          label: i.label?.trim() ? i.label.trim() : null,
+        })),
+        direction_modes: [directionMode],
         timeframe,
         period_start: periodStart,
         period_end: periodEnd || undefined,
@@ -282,6 +385,7 @@ function BatchesPageInner() {
           : await apiPostJson<Batch>("/batches", body),
       );
       setBatch(saved);
+      writeInstrumentPreference(instruments);
       await refreshPreview(saved.id);
       setSuccess("Entwurf gespeichert.");
     } catch (e) {
@@ -625,7 +729,10 @@ function BatchesPageInner() {
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
             <CardTitle>Instrumente</CardTitle>
-            <CardDescription>Provider-Symbole, nicht nur der fachliche Name.</CardDescription>
+            <CardDescription>
+              Provider-Symbole, nicht nur der fachliche Name. Deaktivierte Einträge bleiben
+              sichtbar, erzeugen aber keine Runs.
+            </CardDescription>
           </div>
           {!isConfirmed && (
             <Button variant="outline" size="sm" onClick={addInstrument}>
@@ -635,9 +742,22 @@ function BatchesPageInner() {
           )}
         </CardHeader>
         <CardContent>
+          {activeInstruments.length === 0 && !isConfirmed && (
+            <Alert variant="destructive" className="mb-3">
+              <TriangleAlert aria-hidden="true" />
+              <AlertDescription>Bitte mindestens ein Instrument aktivieren.</AlertDescription>
+            </Alert>
+          )}
+          {hasDuplicateProviderSymbol(instruments) && !isConfirmed && (
+            <Alert variant="destructive" className="mb-3">
+              <TriangleAlert aria-hidden="true" />
+              <AlertDescription>Provider-Symbol ist bereits vorhanden.</AlertDescription>
+            </Alert>
+          )}
           <Table>
             <TableHeader>
               <TableRow>
+                {!isConfirmed && <TableHead className="w-12">Aktiv</TableHead>}
                 <TableHead>Provider-Symbol</TableHead>
                 <TableHead>Label</TableHead>
                 {!isConfirmed && <TableHead className="w-10" />}
@@ -645,16 +765,33 @@ function BatchesPageInner() {
             </TableHeader>
             <TableBody>
               {instruments.map((instr, idx) => (
-                <TableRow key={idx}>
+                <TableRow
+                  key={idx}
+                  className={!instr.active && !isConfirmed ? "opacity-60" : undefined}
+                >
+                  {!isConfirmed && (
+                    <TableCell>
+                      <Checkbox
+                        checked={instr.active}
+                        onCheckedChange={() => toggleInstrumentActive(idx)}
+                        aria-label={`Instrument ${instr.provider_symbol || "neu"} aktiv`}
+                      />
+                    </TableCell>
+                  )}
                   <TableCell>
                     {isConfirmed ? (
                       <span className="font-mono">{instr.provider_symbol}</span>
                     ) : (
-                      <Input
-                        value={instr.provider_symbol}
-                        onChange={(e) => updateInstrument(idx, "provider_symbol", e.target.value)}
-                        className="h-8 font-mono text-sm"
-                      />
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Input
+                          value={instr.provider_symbol}
+                          onChange={(e) => updateInstrument(idx, "provider_symbol", e.target.value)}
+                          className="h-8 w-56 font-mono text-sm"
+                        />
+                        {!instr.active && (
+                          <Badge variant="secondary">Nicht verwendet</Badge>
+                        )}
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>
@@ -664,7 +801,7 @@ function BatchesPageInner() {
                       <Input
                         value={instr.label ?? ""}
                         onChange={(e) => updateInstrument(idx, "label", e.target.value)}
-                        className="h-8 text-sm"
+                        className="h-8 max-w-48 text-sm"
                       />
                     )}
                   </TableCell>
@@ -728,20 +865,81 @@ function BatchesPageInner() {
         <CardHeader>
           <CardTitle>Richtungsmodus</CardTitle>
           <CardDescription>
-            Mehrfachauswahl möglich — jeder gewählte Modus erzeugt einen eigenen Run.
+            Genau ein Modus je Batch — gilt für Standard-, Holdout- und Forward-Batches.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {DIRECTION_MODES.map((mode) => (
-            <label key={mode} className="flex items-center gap-3 text-sm">
-              <Checkbox
-                checked={directionModes.includes(mode)}
-                onCheckedChange={() => toggleDirectionMode(mode)}
-                disabled={isConfirmed}
-              />
-              {DIRECTION_MODE_LABELS[mode]}
-            </label>
-          ))}
+        <CardContent className="flex flex-col gap-4">
+          <div
+            role="radiogroup"
+            aria-labelledby="direction-mode-legend"
+            aria-describedby="direction-mode-help"
+            className="flex flex-col gap-2"
+          >
+            <p id="direction-mode-legend" className="text-sm font-medium">
+              Richtung
+            </p>
+            <p id="direction-mode-help" className="text-xs text-muted-foreground">
+              Pro Strategieversion und aktivem Instrument wird genau ein Run angelegt.
+            </p>
+            <div className="mt-2 flex flex-col gap-2">
+              {DIRECTION_MODES.map((mode) => {
+                const label =
+                  mode === "kombiniert"
+                    ? "Long & Short"
+                    : mode === "long-only"
+                      ? "Nur Long"
+                      : "Nur Short";
+                return (
+                  <label key={mode} className="flex items-center gap-3 text-sm">
+                    <input
+                      type="radio"
+                      name="direction-mode"
+                      value={mode}
+                      checked={directionMode === mode}
+                      onChange={() => {
+                        setDirectionMode(mode);
+                        setLegacyDirectionModes(null);
+                      }}
+                      disabled={isConfirmed}
+                      className="size-4 cursor-pointer accent-primary disabled:cursor-not-allowed disabled:opacity-50"
+                    />
+                    {label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <p className="text-sm text-muted-foreground">
+            Aktiver Modus:{" "}
+            <span className="font-medium text-foreground">
+              {directionMode
+                ? DIRECTION_MODE_LABELS[directionMode] ?? directionMode
+                : "keiner ausgewählt"}
+            </span>
+          </p>
+
+          {legacyDirectionModes && legacyDirectionModes.length > 0 && (
+            <Alert>
+              <TriangleAlert aria-hidden="true" />
+              <AlertDescription>
+                Historischer Batch mit mehreren Richtungsmodi (
+                {legacyDirectionModes
+                  .map((m) => DIRECTION_MODE_LABELS[m] ?? m)
+                  .join(", ")}
+                ) — schreibgeschützt.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {directionMode && !DIRECTION_MODES.includes(directionMode as (typeof DIRECTION_MODES)[number]) && (
+            <Alert variant="destructive">
+              <TriangleAlert aria-hidden="true" />
+              <AlertDescription>
+                Unbekannter Richtungswert &bdquo;{directionMode}&ldquo; — Speichern blockiert.
+              </AlertDescription>
+            </Alert>
+          )}
         </CardContent>
       </Card>
 
