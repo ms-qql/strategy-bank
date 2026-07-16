@@ -32,7 +32,79 @@
 <!-- Sections below are added by subsequent skills -->
 
 ## Tech Design (Solution Architect)
-_To be added by /abc-architecture_
+**Erstellt:** 2026-07-16 · **Stack:** Next.js + shadcn/ui; bestehendes FastAPI + PostgreSQL unverändert · **Branch:** dev
+
+### A) Komponentenstruktur
+
+```text
+BatchConfigurationPage
+└── StrategyVersionsCard
+    ├── CardHeader
+    │   ├── Titel „Strategieversionen"
+    │   └── Beschreibung „Nur freigegebene Versionen sind wählbar."
+    └── CardContent
+        ├── EmptyState (wenn keine freigegebene Version vorhanden ist)
+        └── Scrollbare Versionsliste (höchstens 50 % der Browserhöhe)
+            └── StrategyVersionRow
+                ├── Checkbox
+                ├── Strategiename
+                ├── Versionsnummer
+                └── Freigabedatum
+```
+
+Nur die Versionsliste wird scrollbar. Titel, Beschreibung und nachfolgende
+Konfigurationskarten bleiben im normalen Seitenfluss sichtbar. Bei wenigen Versionen wächst die
+Liste nur mit ihrem Inhalt; auf kleinen Browserhöhen bleibt mindestens eine vollständige Zeile
+bedienbar.
+
+### B) Datenmodell
+
+Es werden keine neuen Daten gespeichert. Die Seite verwendet weiterhin:
+
+- die bereits geladenen freigegebenen Strategieversionen mit ID, Name, Versionsnummer und
+  Freigabedatum;
+- die bestehende Liste ausgewählter Strategieversions-IDs als einzige Quelle für den
+  Auswahlzustand;
+- den bestehenden Batch-Status, um Checkboxen nach der Bestätigung zu sperren.
+
+Scrollposition und Sichtbarkeit einer Zeile verändern den Auswahlzustand nicht. Nach einem
+erneuten Laden bleiben alle weiterhin vorhandenen, vom Batch referenzierten IDs ausgewählt.
+PostgreSQL und MinIO sind von dieser Änderung nicht betroffen.
+
+### C) API-Form
+
+Keine neuen oder geänderten Endpunkte:
+
+- `GET /versions` → lädt weiterhin alle freigegebenen Strategieversionen.
+- `GET /batches/{id}` → liefert beim Öffnen eines Batches weiterhin dessen ausgewählte IDs.
+- `POST /batches` und `PATCH /batches/{id}` → erhalten weiterhin dieselben ausgewählten IDs.
+- `GET /batches/{id}/preview` → berechnet die Run-Vorschau weiterhin unverändert.
+
+### D) Tech-Entscheidungen
+
+- **Bestehende Karte erweitern statt neue Auswahlkomponente bauen:** Das Feature ändert nur die
+  Darstellung einer bereits funktionierenden Mehrfachauswahl. So bleiben Auswahlregeln,
+  Speichern und Run-Vorschau unberührt.
+- **Nativer innerer Scrollbereich:** Maus, Trackpad und Tastatur funktionieren ohne eigene
+  Scrolllogik. Die Checkboxen bleiben in ihrer normalen Tab-Reihenfolge und per Leertaste
+  bedienbar.
+- **Höhenbegrenzung relativ zur Browserhöhe:** Die Liste beansprucht höchstens die geforderten
+  50 Prozent der sichtbaren Höhe. Eine Mindesthöhe verhindert, dass auf kleinen Fenstern keine
+  vollständige Zeile mehr erreichbar ist.
+- **Keine Virtualisierung:** Alle Versionen bleiben gleichzeitig Teil der Seite. Das bewahrt
+  native Tastaturbedienung und Auswahlzustand und vermeidet zusätzliche Komplexität für die
+  derzeit vollständig geladene Liste.
+- **Lange Namen bleiben innerhalb der Zeile:** Der Namensbereich darf die Karte nicht
+  verbreitern; bei Platzmangel wird der Text innerhalb der verfügbaren Breite umgebrochen oder
+  gekürzt, während Versionsnummer und Checkbox bedienbar bleiben.
+- **Bestätigte Batches bleiben scrollbar:** Nur die Auswahl ist gesperrt; Lesen und Navigieren
+  durch alle ausgewählten Versionen bleiben möglich.
+
+### E) Abhängigkeiten
+
+- Frontend: keine neuen Pakete; vorhandene Next.js-, Tailwind- und shadcn/ui-Bausteine reichen.
+- Backend: keine Änderungen und keine neuen Python-Pakete.
+- Datenbank/Dateispeicher: keine Migration und keine MinIO-Nutzung.
 
 ## QA Test Results
 _To be added by /abc-qa_
