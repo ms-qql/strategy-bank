@@ -326,7 +326,7 @@ def _build_run_prompt(exec_row: dict) -> str:
         f"- symbol: {exec_row['provider_symbol']}\n"
         f"- timeframe: {exec_row['timeframe']}\n"
         f"- from: {exec_row['period_start']}\n"
-        f"{'- to: ' + exec_row['period_end'] if exec_row.get('period_end') else ''}\n"
+        f"{'- to: ' + str(exec_row['period_end']) if exec_row.get('period_end') else ''}\n"
         f"Output ONLY the raw JSON result inside a ```json code block. No commentary."
     )
 

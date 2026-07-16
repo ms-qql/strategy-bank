@@ -1,4 +1,5 @@
 """PROJ-6: Queue und trader.dev-Ausführung — Backend-Tests."""
+from datetime import date
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -324,6 +325,13 @@ class TestRetry:
 
 
 class TestRunBacktestExecution:
+    def test_worker_prompt_accepts_database_dates(self):
+        from app.services.worker import _build_run_prompt
+
+        prompt = _build_run_prompt({"pine_source": "// pine", "provider_symbol": "BTC", "timeframe": "4h", "period_start": date(2021, 1, 1), "period_end": date(2024, 12, 31)})
+
+        assert "- to: 2024-12-31" in prompt
+
     def test_worker_uses_backtest_profile_id_for_execution(self):
         from app.services import worker
 
