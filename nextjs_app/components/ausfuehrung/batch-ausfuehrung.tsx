@@ -119,9 +119,7 @@ export default function BatchAusfuehrung({
       const hasPending = result.runs.some(
         (r) => !["erfolgreich", "fehlgeschlagen", "abgebrochen"].includes(r.status),
       );
-      if (hasPending) {
-        setStarted(true);
-      }
+      setStarted(result.batch_status === "in_ausfuehrung");
       return hasPending;
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Runs konnten nicht geladen werden.");
@@ -218,7 +216,7 @@ export default function BatchAusfuehrung({
     }
   };
 
-  if (!started && !data) {
+  if (!started) {
     return (
       <Card className="mb-6 border-2 border-border">
         <CardHeader>
