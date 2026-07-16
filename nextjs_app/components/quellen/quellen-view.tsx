@@ -18,7 +18,6 @@ import {
 } from "@/lib/schemas/extraction";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -40,6 +39,7 @@ import {
 } from "@/components/ui/table";
 import { ExtrahierenButton } from "./extrahieren-button";
 import { EntwurfCard } from "./entwurf-card";
+import { MarkdownDropzone } from "./markdown-dropzone";
 
 const TYP_LABEL: Record<Source["source_type"], string> = {
   text: "Text",
@@ -84,7 +84,6 @@ export function QuellenView() {
   const [datei, setDatei] = useState<File | null>(null);
   const [absenden, setAbsenden] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
-  const dateiInput = useRef<HTMLInputElement>(null);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [extData, setExtData] = useState<Map<string, ExtState>>(new Map());
@@ -108,6 +107,27 @@ export function QuellenView() {
     return () => {
       for (const h of handles.values()) clearTimeout(h);
       handles.clear();
+    };
+  }, []);
+
+  // ponytail: globaler Datei-Drop-Schutz. Verhindert, dass der Browser die App
+  // durch eine außerhalb der Dropzone abgelegte Datei ersetzt. Klicks, Text-
+  // auswahl und Drag-Vorgänge ohne Dateien bleiben unberührt.
+  useEffect(() => {
+    function isFileDrag(e: DragEvent) {
+      return Array.from(e.dataTransfer?.types ?? []).includes("Files");
+    }
+    function onDragOver(e: DragEvent) {
+      if (isFileDrag(e)) e.preventDefault();
+    }
+    function onDrop(e: DragEvent) {
+      if (isFileDrag(e)) e.preventDefault();
+    }
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("drop", onDrop);
     };
   }, []);
 
@@ -255,7 +275,11 @@ export function QuellenView() {
   function reset() {
     setText("");
     setDatei(null);
-    if (dateiInput.current) dateiInput.current.value = "";
+  }
+
+  function handleDateiChange(file: File | null, error: string | null) {
+    setDatei(file);
+    setFehler(error);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -345,20 +369,7 @@ export function QuellenView() {
               </TabsContent>
 
               <TabsContent value="markdown_file" className="pt-2">
-                <Label htmlFor="quelle-datei">Markdown-Datei (.md)</Label>
-                <Input
-                  id="quelle-datei"
-                  ref={dateiInput}
-                  type="file"
-                  accept=".md,text/markdown"
-                  onChange={(e) => setDatei(e.target.files?.[0] ?? null)}
-                  className="mt-2"
-                />
-                {datei && (
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Ausgewählt: {datei.name} ({Math.ceil(datei.size / 1024)} KB)
-                  </p>
-                )}
+                <MarkdownDropzone datei={datei} onChange={handleDateiChange} />
               </TabsContent>
             </Tabs>
 
