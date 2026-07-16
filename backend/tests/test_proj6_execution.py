@@ -402,6 +402,25 @@ class TestRunBacktestExecution:
 
         assert cur.execute.call_args_list[-1].args[1] == ["job-1", execution["id"]]
 
+    def test_worker_stores_completed_quick_backtest(self):
+        from app.services import worker
+
+        cur = MagicMock()
+        run_id = uuid4()
+        execution = {"id": uuid4(), "pine_source": "// pine", "provider_symbol": "BTC", "timeframe": "4h", "period_start": "2021-01-01", "period_end": "2024-12-31"}
+        output = {
+            "status": "completed",
+            "resultId": "result-1",
+            "reportLink": "https://mcp-api.trader.dev/backtest/result-1",
+            "result": {"netProfitPct": 12.5, "tradeCount": 42},
+        }
+        with patch.object(worker, "start_backtest", return_value=output):
+            worker._submit_backtest(cur, run_id, execution)
+
+        sql = "\n".join(call.args[0] for call in cur.execute.call_args_list)
+        assert "backtest_result" in sql
+        assert "status = 'erfolgreich'" in sql
+
     def test_worker_uses_backtest_profile_id_for_execution(self):
         from app.services import worker
 

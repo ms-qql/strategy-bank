@@ -244,6 +244,22 @@ def _submit_backtest(cur, run_id: UUID, exec_row: dict) -> None:
         _mark_failed(cur, run_id, exec_row, str(exc), "trader_dev_error")
         return
 
+    if output.get("status") == "completed" and output.get("result"):
+        cur.execute(
+            """UPDATE backtest_executions SET backtest_result = %s,
+               external_result_id = %s, report_link = %s, report_available = %s,
+               provider_status = 'completed', completed_at = %s WHERE id = %s""",
+            [
+                json.dumps(output["result"]), output.get("resultId"), output.get("reportLink"),
+                bool(output.get("reportLink")), _epoch(), exec_row["id"],
+            ],
+        )
+        cur.execute(
+            "UPDATE runs SET status = 'erfolgreich', completed_at = %s WHERE id = %s",
+            [_epoch(), run_id],
+        )
+        return
+
     job_id = output.get("jobId") or output.get("job_id")
     if not job_id:
         _mark_failed(cur, run_id, exec_row, "trader.dev lieferte keine Job-ID.", "trader_dev_response")

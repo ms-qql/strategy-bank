@@ -10,6 +10,8 @@ from ..config import settings
 
 _MCP_URL = "https://mcp.trader.dev"
 _SSE_URL = f"{_MCP_URL}/sse"
+_RESULT_API_URL = "https://mcp-api.trader.dev/backtest-results"
+_REPORT_RE = re.compile(r"https://mcp-api\.trader\.dev/backtest/([\w-]+)", re.IGNORECASE)
 
 
 class CreditServiceError(RuntimeError):
@@ -47,11 +49,43 @@ def start_backtest(*, pine_source: str, symbol: str, timeframe: str, period_star
     }
     if period_end:
         arguments["to"] = str(period_end)
-    return _call_tool("quick_backtest", arguments)
+    output = _call_tool("quick_backtest", arguments)
+    result_id = _first(output, "resultId", "id")
+    if not result_id:
+        return output
+
+    result = output if "netProfitPct" in output else _fetch_backtest_result(str(result_id))
+    result = dict(result)
+    if "tradeCount" not in result and "totalTrades" in result:
+        result["tradeCount"] = result["totalTrades"]
+    return {
+        "status": "completed",
+        "result": result,
+        "resultId": str(result_id),
+        "reportLink": output.get("reportLink") or f"https://mcp-api.trader.dev/backtest/{result_id}",
+    }
 
 
 def get_backtest_result(job_id: str) -> dict[str, Any]:
     return _call_tool("get_backtest_result", {"jobId": job_id})
+
+
+def _fetch_backtest_result(result_id: str) -> dict[str, Any]:
+    try:
+        headers = {"User-Agent": "strategy-bank/1.0"}
+        if settings.trader_dev_api_key:
+            headers["Authorization"] = f"Bearer {settings.trader_dev_api_key}"
+        request = Request(
+            f"{_RESULT_API_URL}/{result_id}",
+            headers=headers,
+        )
+        with urlopen(request, timeout=30) as response:
+            result = json.load(response)
+    except (OSError, TimeoutError, URLError, ValueError, json.JSONDecodeError) as exc:
+        raise TraderDevServiceError(f"Backtest-Ergebnis konnte nicht geladen werden: {exc}") from exc
+    if not isinstance(result, dict):
+        raise TraderDevServiceError("trader.dev lieferte kein strukturiertes Backtest-Ergebnis.")
+    return result
 
 
 def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -127,6 +161,9 @@ def _tool_json(result: dict[str, Any]) -> dict[str, Any]:
             if isinstance(parsed, dict):
                 return parsed
         except json.JSONDecodeError:
+            report = _REPORT_RE.search(text)
+            if report:
+                return {"resultId": report.group(1), "reportLink": report.group(0)}
             job = re.search(r"(?:job[ _-]?id|backtest[ _-]?id)\s*[:=]\s*[`\"']?([\w-]+)", text, re.IGNORECASE)
             if job:
                 return {"jobId": job.group(1)}
