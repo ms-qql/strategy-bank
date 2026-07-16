@@ -17,7 +17,7 @@
 | PROJ-11 | Sidebar-Navigation | Deployed | P0 | PROJ-1, PROJ-4, PROJ-7 |
 | PROJ-12 | Automatische Backtest-Ausführung aus der App | Deployed | P0 | PROJ-5, PROJ-6, PROJ-8 |
 | PROJ-13 | LLM-basierte Pine-Script-Generierung (ersetzt Regex-Übersetzer) | In Review | P0 | PROJ-6, PROJ-2 |
-| PROJ-14 | Markdown-Drag-and-Drop in der Quellenerfassung | Planned | P1 | PROJ-1 |
+| PROJ-14 | Markdown-Drag-and-Drop in der Quellenerfassung | Architected | P1 | PROJ-1 |
 | PROJ-15 | Einklappbare Liste vorhandener Batches | Planned | P1 | PROJ-4 |
 | PROJ-16 | Scrollbare Strategieversionsauswahl im Backtest | Planned | P1 | PROJ-4 |
 | PROJ-17 | Instrumente pro Batch aktivieren oder ausblenden | Deployed (Backend fix, 2026-07-16, v0.2.23) | P0 | PROJ-4, PROJ-5 |
