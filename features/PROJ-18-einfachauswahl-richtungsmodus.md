@@ -1,6 +1,6 @@
 # PROJ-18: Einfachauswahl für den Richtungsmodus
 
-## Status: Approved (Frontend + Backend hardened, QA passed)
+## Status: Deployed (Frontend + Backend)
 **Created:** 2026-07-16
 **Last Updated:** 2026-07-16
 
@@ -267,4 +267,13 @@ mehrfache Auswahl liefert 422 mit „Bitte genau einen Richtungsmodus wählen.�
 
 
 ## Deployment
-_To be added by /abc-deploy_
+**Deployed:** 2026-07-16, Version v0.2.23 (Bump bereits in 6304a8c erfolgt — kein weiterer Bump in diesem Deploy-Commit).
+**Inhalt:**
+- **Frontend** (`nextjs_app/app/batches/page.tsx`): native Radio-Gruppe (role=radiogroup + aria-labelledby/aria-describedby; Tab/Pfeil/Space browser-native) ersetzt die Checkbox-Mehrfachauswahl. Drei Optionen mit AC-Labels „Long & Short", „Nur Long", „Nur Short". Default `kombiniert` für neue Batches; Single-Selektion erzwungen. Bearbeitbare Alt-Entwürfe mit 0/2+ Modi werden nicht stillschweigend reduziert (directionMode=null, Save blockiert). Bestätigte Multi-Mode-Historie zeigt schreibgeschützte Legacy-Notice. Unbekannter gespeicherter Wert löst destructive Alert aus, Save blockiert.
+- **Backend** (`backend/app/routes/batches.py`): `_validate_direction_modes` verlangt jetzt `len(modes) == 1`; leere oder mehrfache Auswahl liefert 422 „Bitte genau einen Richtungsmodus wählen." Unbekannter Wert in single-element list behält „Ungültiger Richtungsmodus: X". `confirm_batch` ruft die Validierung erneut auf die gespeicherten Modi auf (letzte Schutzschicht gegen Migrationsdaten). Read-Endpoints (Preview, Credit-Check) bleiben unverändert für Backward-Compat mit historischen Multi-Mode-Batches.
+- **Tests**: `TestDirectionModeValidation` (11 neue Fälle inkl. Confirm-blockt-Legacy-Multi-Seed) + 3 modifizierte bestehende Tests. `pytest tests/`: 222/223 grün (1 pre-existing failure in `test_results.py` results-domain, unrelated).
+
+**Commit:** `64c12eb feat(PROJ-18): Einfachauswahl Richtungsmodus (Frontend + Backend + QA)`.
+**Push:** `origin/main` (Auto-Deploy auf Dokploy, `docker-compose.dokploy.yml`).
+**Offen:** Bug 3 (Test-Infrastruktur für `nextjs_app`, Low) — non-blocking, separate Folge-Iteration.
+**Smoke-Test (Browser!):** Nach dem Frontend-Rebuild **Hard-Refresh** (Strg/Cmd+Shift+R) auf `/batches`, sonst läuft das alte Service-Worker-Bundle und der Fix wirkt nicht. Dann eine neue Batch-Konfiguration öffnen, „Long & Short" / „Nur Long" / „Nur Short" per Tab + Pfeiltasten durchschalten, „Aktiver Modus"-Zeile muss synchron wechseln. Bei bestehendem Batch: gespeicherten Modus vorausgewählt.

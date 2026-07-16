@@ -1,6 +1,6 @@
 # PROJ-17: Instrumente pro Batch aktivieren oder ausblenden
 
-## Status: Architected
+## Status: Deployed (Backend-Fix)
 **Created:** 2026-07-16
 **Last Updated:** 2026-07-16
 
@@ -244,4 +244,8 @@ Offene Punkte für Product-Entscheidung:
   deaktivieren" als Follow-up.
 
 ## Deployment
-_To be added by /abc-deploy_
+**Deployed:** 2026-07-16, Version v0.2.23 (Bump bereits in 6304a8c erfolgt — kein weiterer Bump in diesem Deploy-Commit).
+**Inhalt:** Backend lehnt doppelte `provider_symbol` (case-insensitive) in `POST /batches`, `PATCH /batches/{id}` und `POST /strategy-versions/{id}/{holdout,forward-test}-batch` mit der Spec-Meldung „Provider-Symbol ist bereits vorhanden." (422) ab. Begleit-Fix in `app/main.py`: `RequestValidationError`-Handler benutzt jetzt `jsonable_encoder`, damit Pydantic-2-Rohexceptions im `ctx` nicht mehr in ein 500 statt 422 kippen.
+**Commit:** `e654857 fix(PROJ-17): reject duplicate provider_symbol in batch instruments` + `05eb2d5 test(PROJ-17): Add QA results + backend tests for instrument spec contract`.
+**Push:** `origin/main` (Auto-Deploy auf Dokploy, `docker-compose.dokploy.yml`).
+**Offen:** Bug 2 (leere-Liste-Acceptance) und Bug 3 (UX-Polish „Bestätigen"-Button bei aktiver-leerer Liste deaktivieren) bleiben offene Product-Punkte für eine Folge-Iteration.
