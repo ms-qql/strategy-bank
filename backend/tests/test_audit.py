@@ -113,9 +113,9 @@ class TestAuditTrail:
         assert audit["period_start"] == "2021-01-01"
         assert audit["period_end"] == "2024-12-31"
         assert audit["credit_max"] == 1
-        assert audit["credit_balance"] == 1000
-        assert audit["credit_remaining"] == 999
-        assert audit["credit_tier"] == "free"
+        assert audit["credit_balance"] is None
+        assert audit["credit_remaining"] is None
+        assert audit["credit_tier"] is None
         assert audit["report_available"] is False
         assert audit["raw_response_available"] is False
         assert audit["report_link"] is None

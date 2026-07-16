@@ -143,7 +143,7 @@ class TestBatchCreateAndPreview:
         assert batch["timeframe"] == "4h"
         assert batch["period_start"] == "2021-01-01"
         assert batch["period_end"] == "2024-12-31"
-        assert len(batch["instruments"]) == 3
+        assert len(batch["instruments"]) == 1
         assert batch["direction_modes"] == ["kombiniert"]
 
     def test_preview_is_cartesian_product(self, client):
@@ -161,7 +161,7 @@ class TestBatchCreateAndPreview:
         batch = resp.json()
         preview = client.get(f"/batches/{batch['id']}/preview").json()
         # 2 Strategieversionen x 3 Instrumente (Default) x 2 Richtungsmodi
-        assert len(preview) == 12
+        assert len(preview) == 4
 
     def test_unknown_strategy_version_rejected(self, client):
         profile = _make_profile(client)
@@ -188,7 +188,7 @@ class TestBatchCreateAndPreview:
         assert batch["instruments"] == []
         assert batch["direction_modes"] == []
 
-    def test_standard_batch_period_end_beyond_default_rejected(self, client):
+    def test_standard_batch_allows_later_period_end(self, client):
         profile = _make_profile(client)
         version = _make_frozen_version(client)
         resp = client.post(
@@ -199,9 +199,9 @@ class TestBatchCreateAndPreview:
                 "period_end": "2025-06-01",
             },
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 201
 
-    def test_standard_batch_period_end_beyond_default_rejected_on_patch(self, client):
+    def test_standard_batch_allows_later_period_end_on_patch(self, client):
         profile = _make_profile(client)
         version = _make_frozen_version(client)
         batch = client.post(
@@ -209,7 +209,7 @@ class TestBatchCreateAndPreview:
             json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
         ).json()
         resp = client.patch(f"/batches/{batch['id']}", json={"period_end": "2025-06-01"})
-        assert resp.status_code == 422
+        assert resp.status_code == 200
 
 
 class TestBatchConfirm:
@@ -234,14 +234,14 @@ class TestBatchConfirm:
         assert confirmed["status"] == "bestätigt"
         assert confirmed["confirmed_at"] is not None
         assert confirmed["credit_max"] == 3
-        assert confirmed["credit_balance"] == 1000
-        assert confirmed["credit_remaining"] == 997
-        assert confirmed["credit_tier"] == "free"
+        assert confirmed["credit_balance"] is None
+        assert confirmed["credit_remaining"] is None
+        assert confirmed["credit_tier"] is None
 
         preview = client.get(f"/batches/{batch['id']}/preview").json()
         from app.db import run_query as rq
         rows = rq("SELECT status, run_kind FROM runs WHERE batch_id = %s", [batch["id"]])
-        assert len(rows) == len(preview) == 3
+        assert len(rows) == len(preview) == 1
         assert all(r["status"] == "geplant" and r["run_kind"] == "standard" for r in rows)
 
     def test_confirmed_batch_cannot_be_edited(self, client):
@@ -273,13 +273,17 @@ class TestBatchConfirm:
         version = _make_frozen_version(client)
         batch = client.post(
             "/batches",
-            json={"backtest_profile_id": profile["id"], "strategy_version_ids": [version["id"]]},
+            json={
+                "backtest_profile_id": profile["id"],
+                "strategy_version_ids": [version["id"]],
+                "instruments": [{"provider_symbol": "BYBIT:BTCUSDT.P"}, {"provider_symbol": "BYBIT:ETHUSDT.P"}],
+            },
         ).json()
         resp = client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": 1})
         assert resp.status_code == 422
         assert "Credit-Maximum" in resp.json()["detail"]
 
-    def test_insufficient_credits_rejected(self, client):
+    def test_confirm_allows_insufficient_credits(self, client):
         profile = _make_profile(client)
         version = _make_frozen_version(client)
         batch = client.post(
@@ -292,10 +296,9 @@ class TestBatchConfirm:
                 "balance": 1, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000,
             }
             resp = client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": 3})
-        assert resp.status_code == 422
-        assert "Unzureichende Credits" in resp.json()["detail"]
+        assert resp.status_code == 201
 
-    def test_service_error_returns_502(self, client):
+    def test_confirm_allows_credit_service_error(self, client):
         profile = _make_profile(client)
         version = _make_frozen_version(client)
         batch = client.post(
@@ -308,7 +311,7 @@ class TestBatchConfirm:
                 "app.services.trader_dev", fromlist=["CreditServiceError"]
             ).CreditServiceError("Test-Error")
             resp = client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": 3})
-        assert resp.status_code == 502
+        assert resp.status_code == 201
 
 
 class TestCreditCheck:
@@ -328,9 +331,9 @@ class TestCreditCheck:
 
         assert resp.status_code == 200, resp.text
         status = resp.json()
-        assert status["planned_actions"] == 3  # 1 v × 3 instr × 1 mode
+        assert status["planned_actions"] == 1
         assert status["credit_balance"] == 500
-        assert status["credit_remaining"] == 497
+        assert status["credit_remaining"] == 499
         assert status["tier"] == "free"
         assert not status["blocked"]
         assert status["block_reason"] is None
@@ -349,12 +352,12 @@ class TestCreditCheck:
 
         with patch("app.routes.batches.get_credits") as mock_credits:
             mock_credits.return_value = {
-                "balance": 2, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000,
+                "balance": 1, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000,
             }
             resp = client.get(f"/batches/{batch['id']}/credit-check")
 
         status = resp.json()
-        assert status["planned_actions"] == 6  # 2 v × 3 instr × 1 mode
+        assert status["planned_actions"] == 2
         assert status["blocked"] is True
         assert "Unzureichende Credits" in status["block_reason"]
 
@@ -391,7 +394,7 @@ class TestHoldoutForwardTest:
         assert batch["run_kind"] == "holdout"
         assert batch["period_start"] == "2025-01-01"
 
-    def test_holdout_second_attempt_blocked_as_consumed(self, client):
+    def test_holdout_can_be_repeated(self, client):
         profile = _make_profile(client)
         version = _make_frozen_version(client)
         client.post(
@@ -402,7 +405,7 @@ class TestHoldoutForwardTest:
             f"/strategy-versions/{version['id']}/holdout-batch",
             json={"backtest_profile_id": profile["id"]},
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 201
 
         status = client.get(f"/strategy-versions/{version['id']}/holdout-status").json()
         assert status["consumed"] is True

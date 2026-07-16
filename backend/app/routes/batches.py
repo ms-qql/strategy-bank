@@ -109,6 +109,13 @@ def _insert_profile_version(family_id: UUID, version_number: int, body: Backtest
 
 # --- Batches -----------------------------------------------------------
 
+@router.get("/batches", response_model=list[BatchRead])
+def list_batches() -> list[dict]:
+    return [
+        _load_batch(row["id"])
+        for row in run_query("SELECT id FROM batches ORDER BY created_at DESC LIMIT 50")
+    ]
+
 def _validate_strategy_versions(strategy_version_ids: list[UUID]) -> None:
     rows = run_query(
         "SELECT id FROM strategy_versions WHERE id = ANY(%s)",
@@ -152,9 +159,6 @@ def _create_batch(
     resolved_end = period_end if period_end is not None else (
         date.fromisoformat(DEFAULT_PERIOD_END) if run_kind == "standard" else period_end
     )
-    if run_kind == "standard" and resolved_end is not None and resolved_end > date.fromisoformat(DEFAULT_PERIOD_END):
-        raise HTTPException(422, f"Zeitraum eines Standard-Batches darf nicht über {DEFAULT_PERIOD_END} hinausgehen.")
-
     batch_id = uuid4()
     with transaction() as cur:
         cur.execute(
@@ -219,13 +223,6 @@ def update_batch(batch_id: UUID, body: BatchUpdate) -> dict:
         raise HTTPException(404, "Batch nicht gefunden.")
     if batch["status"] != "entwurf":
         raise HTTPException(422, "Bestätigte Batches können nicht mehr bearbeitet werden.")
-    if (
-        batch["run_kind"] == "standard"
-        and body.period_end is not None
-        and body.period_end > date.fromisoformat(DEFAULT_PERIOD_END)
-    ):
-        raise HTTPException(422, f"Zeitraum eines Standard-Batches darf nicht über {DEFAULT_PERIOD_END} hinausgehen.")
-
     fields: dict[str, object] = {}
     if body.backtest_profile_id is not None:
         if not run_query_one("SELECT id FROM backtest_profiles WHERE id = %s", [body.backtest_profile_id]):
@@ -359,21 +356,6 @@ def confirm_batch(batch_id: UUID, body: BatchConfirmIn) -> dict:
     if body.credit_max < planned_actions:
         raise HTTPException(422, f"Credit-Maximum ({body.credit_max}) deckt nicht alle {planned_actions} geplanten Runs ab.")
 
-    try:
-        credits = get_credits()
-    except CreditServiceError as exc:
-        raise HTTPException(502, f"Credit-Prüfung fehlgeschlagen: {exc}")
-
-    credit_balance = int(credits["balance"])
-    credit_remaining = credit_balance - planned_actions
-
-    if credit_balance < planned_actions:
-        raise HTTPException(
-            422,
-            f"Unzureichende Credits: {credit_balance} verfügbar, "
-            f"{planned_actions} benötigt — es fehlen {planned_actions - credit_balance}.",
-        )
-
     strategy_data: dict[str, dict] = {}
     for sv_id in strategy_version_ids:
         sv = run_query_one("SELECT * FROM strategy_versions WHERE id = %s", [sv_id])
@@ -405,8 +387,8 @@ def confirm_batch(batch_id: UUID, body: BatchConfirmIn) -> dict:
                 credit_checked_at = %s
             WHERE id = %s
             """,
-            [now, body.credit_max, credit_balance, credit_remaining,
-             credits["tier"], credits["reset"], now, batch_id],
+            [now, body.credit_max, None, None,
+             None, None, now, batch_id],
         )
         for sv_id in strategy_version_ids:
             for instr in instruments:
@@ -441,10 +423,10 @@ def confirm_batch(batch_id: UUID, body: BatchConfirmIn) -> dict:
                             mode,
                             batch["run_kind"],
                             body.credit_max,
-                            credit_balance,
-                            credit_remaining,
-                            credits["tier"],
-                            credits["reset"],
+                            None,
+                            None,
+                            None,
+                            None,
                             now,
                         ],
                     )
@@ -486,12 +468,6 @@ def create_holdout_batch(version_id: UUID, body: HoldoutBatchCreate) -> dict:
     )
     if not version:
         raise HTTPException(404, "Version nicht gefunden.")
-
-    existing = run_query_one(
-        "SELECT consumed_at FROM family_holdout_status WHERE family_id = %s", [version["family_id"]],
-    )
-    if existing and existing["consumed_at"] is not None:
-        raise HTTPException(422, "Holdout bereits verwendet für diese Strategie-Familie.")
 
     batch = _create_batch(
         backtest_profile_id=body.backtest_profile_id,

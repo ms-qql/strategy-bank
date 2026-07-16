@@ -127,6 +127,39 @@ def retry_run(run_id: UUID) -> dict:
     return {"run_id": new_id}
 
 
+@router.delete("/{run_id}", status_code=204)
+def delete_run(run_id: UUID) -> None:
+    row = run_query_one("SELECT batch_id, status, backtest_execution_id FROM runs WHERE id = %s", [run_id])
+    if not row:
+        raise HTTPException(404, "Run nicht gefunden.")
+    if row["status"] == "läuft":
+        raise HTTPException(422, "Laufende Runs können nicht gelöscht werden.")
+
+    with transaction() as cur:
+        cur.execute("DELETE FROM run_audits WHERE run_id = %s", [run_id])
+        cur.execute("DELETE FROM runs WHERE id = %s", [run_id])
+        if row["backtest_execution_id"]:
+            cur.execute(
+                "DELETE FROM backtest_executions WHERE id = %s AND NOT EXISTS (SELECT 1 FROM runs WHERE backtest_execution_id = %s)",
+                [row["backtest_execution_id"], row["backtest_execution_id"]],
+            )
+        # War das der letzte Run des Batches, bleibt er sonst dauerhaft in
+        # 'bestätigt'/'in_ausfuehrung' hängen — Konfiguration wäre für immer
+        # gesperrt (isConfirmed) und ein neuer Start unmöglich (0 Runs).
+        cur.execute("SELECT COUNT(*) AS cnt FROM runs WHERE batch_id = %s", [row["batch_id"]])
+        if cur.fetchone()["cnt"] == 0:
+            cur.execute(
+                """
+                UPDATE batches SET
+                    status = 'entwurf', confirmed_at = NULL,
+                    credit_max = NULL, credit_balance = NULL, credit_remaining = NULL,
+                    credit_tier = NULL, credit_reset = NULL, credit_checked_at = NULL
+                WHERE id = %s
+                """,
+                [row["batch_id"]],
+            )
+
+
 def _build_run_summary(batch_id: UUID) -> dict:
     rows = run_query("SELECT status, COUNT(*) AS cnt FROM runs WHERE batch_id = %s GROUP BY status", [batch_id])
     summary = {"total": 0, "erfolgreich": 0, "fehlgeschlagen": 0, "offen": 0, "abgebrochen": 0}

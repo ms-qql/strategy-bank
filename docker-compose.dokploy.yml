@@ -22,6 +22,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in Dokploy}
       OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:?Set OPENCODE_GO_API_KEY in Dokploy}
+      TRADER_DEV_API_KEY: ${TRADER_DEV_API_KEY:?Set TRADER_DEV_API_KEY in Dokploy}
       ENV: production
     depends_on:
       strategy-bank-db:
@@ -35,6 +36,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in Dokploy}
       OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:?Set OPENCODE_GO_API_KEY in Dokploy}
+      TRADER_DEV_API_KEY: ${TRADER_DEV_API_KEY:?Set TRADER_DEV_API_KEY in Dokploy}
       ENV: production
     depends_on:
       strategy-bank-db:

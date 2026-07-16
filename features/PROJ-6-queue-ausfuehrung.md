@@ -2,7 +2,7 @@
 
 ## Status: Deployed
 **Created:** 2026-07-15
-**Last Updated:** 2026-07-15
+**Last Updated:** 2026-07-16
 **Frontend implemented:** 2026-07-15 (BatchAusfuehrung component, schemas, batch page integration)
 **Backend implemented:** 2026-07-15 (routes, schemas, migration, worker, pine_generator)
 
@@ -286,3 +286,15 @@ nicht.
 **Version:** v0.2.4
 **Branch:** main (via dev merge)
 **URL:** https://strategy-bank.dokploy.dev
+
+## Implementation Notes
+
+### 2026-07-16 — Synchrones `quick_backtest`-Ergebnis
+
+`quick_backtest` liefert erfolgreiche Backtests synchron als Text mit Report-Link,
+nicht zwingend als asynchrone Job-ID. Der Adapter extrahiert nun die Result-ID aus
+dem Link, lädt das strukturierte Ergebnis und der Worker persistiert Ergebnis,
+Report-Link und Erfolgsstatus direkt. Der bestehende Job-ID-/Polling-Pfad bleibt
+für asynchrone Provider-Antworten erhalten.
+
+**Fix-Deployment:** 2026-07-16 · v0.2.23 · Produktion

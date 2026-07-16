@@ -64,6 +64,15 @@ CREATE INDEX IF NOT EXISTS idx_backtest_execs_idempotency_key
 CREATE INDEX IF NOT EXISTS idx_backtest_execs_strategy_version_id
     ON backtest_executions (strategy_version_id);
 
-ALTER TABLE runs
-    ADD CONSTRAINT fk_runs_backtest_execution_id
-        FOREIGN KEY (backtest_execution_id) REFERENCES backtest_executions (id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'runs'::regclass
+          AND conname = 'fk_runs_backtest_execution_id'
+    ) THEN
+        ALTER TABLE runs
+            ADD CONSTRAINT fk_runs_backtest_execution_id
+                FOREIGN KEY (backtest_execution_id) REFERENCES backtest_executions (id);
+    END IF;
+END $$;

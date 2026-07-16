@@ -23,10 +23,8 @@ import {
 import {
   backtestProfileSchema,
   batchSchema,
-  holdoutStatusSchema,
   type BacktestProfile,
   type Batch,
-  type HoldoutStatus,
 } from "@/lib/schemas/batch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -186,7 +184,6 @@ export default function EntwurfEditPage() {
   // Holdout / Forward-Test
   const [evalProfiles, setEvalProfiles] = useState<BacktestProfile[]>([]);
   const [evalProfileId, setEvalProfileId] = useState("");
-  const [holdoutStatus, setHoldoutStatus] = useState<HoldoutStatus | null>(null);
   const [holdoutLoading, setHoldoutLoading] = useState(false);
   const [forwardLoading, setForwardLoading] = useState(false);
 
@@ -205,12 +202,8 @@ export default function EntwurfEditPage() {
   const mtsCConfirmed = mtsConfirmed;
   const canFreeze =
     draft?.status === "Entwurf" &&
-    openQuestionCount === 0 &&
     hasEntry &&
-    hasExit &&
-    hasWarmup &&
-    pmConfirmed &&
-    mtsCConfirmed;
+    hasExit;
 
   const loadDraft = useCallback(async () => {
     setLoading(true);
@@ -370,11 +363,6 @@ export default function EntwurfEditPage() {
     try {
       const v = versionReadSchema.parse(await apiGet<VersionRead>(`/versions/${versionId}`));
       setViewingVersion(v);
-      setHoldoutStatus(
-        holdoutStatusSchema.parse(
-          await apiGet<HoldoutStatus>(`/strategy-versions/${versionId}/holdout-status`),
-        ),
-      );
       if (evalProfiles.length === 0) {
         const p = z
           .array(backtestProfileSchema)
@@ -971,7 +959,6 @@ export default function EntwurfEditPage() {
               size="sm"
               onClick={() => {
                 setViewingVersion(null);
-                setHoldoutStatus(null);
               }}
             >
               <X className="h-4 w-4" />
@@ -1084,7 +1071,7 @@ export default function EntwurfEditPage() {
                     <Button
                       variant="outline"
                       onClick={handleStartHoldout}
-                      disabled={holdoutLoading || holdoutStatus?.consumed === true}
+                      disabled={holdoutLoading}
                     >
                       {holdoutLoading && <Loader className="mr-1 h-4 w-4 animate-spin" />}
                       Historischen Holdout auswerten
@@ -1094,11 +1081,6 @@ export default function EntwurfEditPage() {
                       Forward-Test starten
                     </Button>
                   </div>
-                  {holdoutStatus?.consumed && (
-                    <p className="text-xs text-muted-foreground">
-                      Holdout bereits verwendet für diese Strategie-Familie.
-                    </p>
-                  )}
                 </div>
               )}
             </div>

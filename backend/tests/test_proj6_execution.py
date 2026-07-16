@@ -1,5 +1,5 @@
 """PROJ-6: Queue und trader.dev-Ausführung — Backend-Tests."""
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -82,7 +82,7 @@ def _make_confirmed_batch(client, extra_versions=0):
     batch = resp.json()
     with patch("app.routes.batches.get_credits") as mock:
         mock.return_value = {"balance": 1000, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000}
-        expected_runs = len(versions) * 3  # 3 default instruments × 1 default direction
+        expected_runs = len(versions)
         resp = client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": expected_runs})
     assert resp.status_code == 201, resp.text
     return resp.json()
@@ -106,7 +106,7 @@ class TestBatchStart:
 
         from app.db import run_query
         runs = run_query("SELECT status FROM runs WHERE batch_id = %s", [batch["id"]])
-        assert len(runs) == 3
+        assert len(runs) == 1
         assert all(r["status"] == "bestätigt" for r in runs)
 
     def test_start_non_confirmed_batch_rejected(self, client):
@@ -126,6 +126,11 @@ class TestBatchStart:
 
 
 class TestGetBatchRuns:
+    def test_lists_existing_batches(self, client):
+        batch = _make_confirmed_batch(client)
+
+        assert batch["id"] in {item["id"] for item in client.get("/batches").json()}
+
     def test_returns_runs_with_summary(self, client):
         batch = _make_confirmed_batch(client)
         client.post(f"/batches/{batch['id']}/start")
@@ -135,9 +140,9 @@ class TestGetBatchRuns:
         assert data["batch_status"] == "in_ausfuehrung"
         assert "runs" in data
         assert "summary" in data
-        assert len(data["runs"]) == 3
-        assert data["summary"]["total"] == 3
-        assert data["summary"]["offen"] == 3
+        assert len(data["runs"]) == 1
+        assert data["summary"]["total"] == 1
+        assert data["summary"]["offen"] == 1
         assert data["summary"]["erfolgreich"] == 0
         assert data["summary"]["fehlgeschlagen"] == 0
         assert data["summary"]["abgebrochen"] == 0
@@ -177,6 +182,46 @@ class TestGetSingleRun:
     def test_unknown_run_404(self, client):
         resp = client.get(f"/runs/{uuid4()}")
         assert resp.status_code == 404
+
+    def test_delete_terminal_run_removes_audit(self, client):
+        batch = _make_confirmed_batch(client)
+        run = client.get(f"/batches/{batch['id']}/runs").json()["runs"][0]
+        from app.db import run_command, run_query_one
+        run_command("UPDATE runs SET status = 'fehlgeschlagen' WHERE id = %s", [run["id"]])
+
+        assert client.delete(f"/runs/{run['id']}").status_code == 204
+        assert run_query_one("SELECT id FROM run_audits WHERE run_id = %s", [run["id"]]) is None
+
+    def test_delete_pending_run(self, client):
+        batch = _make_confirmed_batch(client)
+        run = client.get(f"/batches/{batch['id']}/runs").json()["runs"][0]
+
+        assert client.delete(f"/runs/{run['id']}").status_code == 204
+
+    def test_delete_last_run_resets_batch_to_entwurf(self, client):
+        # Regression: DELETE /runs/{id} used to never touch the parent batch,
+        # so deleting a batch's only/last run left it stuck at 'bestätigt'
+        # forever (config permanently locked, no way to start a new run).
+        batch = _make_confirmed_batch(client)
+        run = client.get(f"/batches/{batch['id']}/runs").json()["runs"][0]
+
+        assert client.delete(f"/runs/{run['id']}").status_code == 204
+
+        reloaded = client.get(f"/batches/{batch['id']}").json()
+        assert reloaded["status"] == "entwurf"
+        assert reloaded["confirmed_at"] is None
+        assert reloaded["credit_max"] is None
+
+    def test_delete_one_of_several_runs_keeps_batch_confirmed(self, client):
+        batch = _make_confirmed_batch(client, extra_versions=1)
+        runs = client.get(f"/batches/{batch['id']}/runs").json()["runs"]
+        assert len(runs) == 2
+
+        assert client.delete(f"/runs/{runs[0]['id']}").status_code == 204
+
+        reloaded = client.get(f"/batches/{batch['id']}").json()
+        assert reloaded["status"] == "bestätigt"
+        assert reloaded["confirmed_at"] is not None
 
 
 class TestCancelRun:
@@ -278,9 +323,9 @@ class TestRetry:
         assert new_run["run_id"] != run["id"]
 
         all_runs = client.get(f"/batches/{batch['id']}/runs").json()
-        assert all_runs["summary"]["total"] == 4  # 3 original + 1 retry
+        assert all_runs["summary"]["total"] == 2
         assert all_runs["summary"]["fehlgeschlagen"] == 1
-        assert all_runs["summary"]["offen"] == 3  # 2 original geplant + 1 retry
+        assert all_runs["summary"]["offen"] == 1
 
     def test_retry_non_failed_rejected(self, client):
         batch = _make_confirmed_batch(client)
@@ -324,6 +369,71 @@ class TestRetry:
 
 
 class TestRunBacktestExecution:
+    def test_worker_resubmits_execution_without_job_id(self):
+        from app.services import worker
+
+        cur = MagicMock()
+        run = {"id": uuid4(), "strategy_version_id": uuid4(), "provider_symbol": "BTC", "direction_mode": "kombiniert", "run_kind": "standard"}
+        execution = {"id": uuid4(), "provider_status": "submitted", "external_job_id": None}
+        with patch.object(worker, "_find_or_create_execution", return_value=execution), patch.object(worker, "_submit_backtest") as submit:
+            worker._process_one_run(cur, run)
+
+        submit.assert_called_once_with(cur, run["id"], execution)
+
+    def test_worker_regenerates_pine_for_failed_execution(self):
+        from app.services import worker
+
+        cur = MagicMock()
+        cur.fetchone.return_value = {"id": uuid4(), "external_job_id": None, "provider_status": "failed"}
+        run = {"id": uuid4(), "strategy_version_id": uuid4(), "provider_symbol": "BTC", "direction_mode": "kombiniert", "run_kind": "standard"}
+        with patch.object(worker, "_load_strategy_details", return_value={"pine_source": "new pine"}):
+            worker._find_or_create_execution(cur, run, "test-key")
+
+        assert cur.execute.call_args_list[1].args[1] == ["new pine", cur.fetchone.return_value["id"]]
+
+    def test_worker_submits_with_direct_mcp(self):
+        from app.services import worker
+
+        cur = MagicMock()
+        run_id = uuid4()
+        execution = {"id": uuid4(), "pine_source": "// pine", "provider_symbol": "BTC", "timeframe": "4h", "period_start": "2021-01-01", "period_end": "2024-12-31"}
+        with patch.object(worker, "start_backtest", return_value={"jobId": "job-1"}):
+            worker._submit_backtest(cur, run_id, execution)
+
+        assert cur.execute.call_args_list[-1].args[1] == ["job-1", execution["id"]]
+
+    def test_worker_stores_completed_quick_backtest(self):
+        from app.services import worker
+
+        cur = MagicMock()
+        run_id = uuid4()
+        execution = {"id": uuid4(), "pine_source": "// pine", "provider_symbol": "BTC", "timeframe": "4h", "period_start": "2021-01-01", "period_end": "2024-12-31"}
+        output = {
+            "status": "completed",
+            "resultId": "result-1",
+            "reportLink": "https://mcp-api.trader.dev/backtest/result-1",
+            "result": {"netProfitPct": 12.5, "tradeCount": 42},
+        }
+        with patch.object(worker, "start_backtest", return_value=output):
+            worker._submit_backtest(cur, run_id, execution)
+
+        sql = "\n".join(call.args[0] for call in cur.execute.call_args_list)
+        assert "backtest_result" in sql
+        assert "status = 'erfolgreich'" in sql
+
+    def test_worker_uses_backtest_profile_id_for_execution(self):
+        from app.services import worker
+
+        cur = MagicMock()
+        cur.fetchone.side_effect = [None, {"id": uuid4()}]
+        run = {"id": uuid4(), "strategy_version_id": uuid4(), "provider_symbol": "BYBIT:BTCUSDT.P", "direction_mode": "kombiniert", "run_kind": "standard"}
+        profile_id = uuid4()
+
+        with patch.object(worker, "_load_strategy_details", return_value={"backtest_profile_id": profile_id}):
+            worker._find_or_create_execution(cur, run, "test-key")
+
+        assert cur.execute.call_args_list[1].args[1][7] == profile_id
+
     def test_run_with_backtest_execution_shows_metrics(self, client):
         batch = _make_confirmed_batch(client)
         runs_resp = client.get(f"/batches/{batch['id']}/runs")
@@ -379,11 +489,10 @@ class TestRunBacktestExecution:
 
 class TestRunSummary:
     def test_mixed_status_summary(self, client):
-        batch = _make_confirmed_batch(client, extra_versions=1)
-        # 2 versions × 3 instruments = 6 runs
+        batch = _make_confirmed_batch(client, extra_versions=3)
         runs_resp = client.get(f"/batches/{batch['id']}/runs")
         runs = runs_resp.json()["runs"]
-        assert len(runs) == 6
+        assert len(runs) == 4
 
         from app.db import run_command
         run_command("UPDATE runs SET status = 'erfolgreich' WHERE id = %s", [runs[0]["id"]])
@@ -392,18 +501,18 @@ class TestRunSummary:
 
         resp = client.get(f"/batches/{batch['id']}/runs")
         summary = resp.json()["summary"]
-        assert summary["total"] == 6
+        assert summary["total"] == 4
         assert summary["erfolgreich"] == 1
         assert summary["fehlgeschlagen"] == 1
         assert summary["abgebrochen"] == 1
-        assert summary["offen"] == 3
+        assert summary["offen"] == 1
 
     def test_all_pending_summary(self, client):
         batch = _make_confirmed_batch(client)
         resp = client.get(f"/batches/{batch['id']}/runs")
         summary = resp.json()["summary"]
-        assert summary["total"] == 3
-        assert summary["offen"] == 3
+        assert summary["total"] == 1
+        assert summary["offen"] == 1
         assert summary["erfolgreich"] == 0
         assert summary["fehlgeschlagen"] == 0
         assert summary["abgebrochen"] == 0

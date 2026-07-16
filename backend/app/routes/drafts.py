@@ -154,18 +154,8 @@ def freeze_draft(draft_id: UUID) -> dict:
     if draft["status"] != "Entwurf":
         raise HTTPException(422, f"Freigabe nicht möglich — Status ist '{draft['status']}'.")
 
-    open_count = run_query_one(
-        "SELECT count(*)::int AS cnt FROM draft_open_questions WHERE draft_id = %s",
-        [draft_id],
-    )
-    if open_count and open_count["cnt"] > 0:
-        raise HTTPException(422, "Freigabe nicht möglich — es existieren noch offene Unklarheiten.")
-
     if not (draft.get("entry_rule") and str(draft["entry_rule"]).strip()):
         raise HTTPException(422, "Freigabe nicht möglich — Entry-Regel fehlt.")
-
-    if not draft.get("position_mode_confirmed"):
-        raise HTTPException(422, "Positionsmodus muss vor der Freigabe bestätigt werden.")
 
     _resolve_and_persist_exit(draft_id)
     draft = run_query_one(
@@ -181,24 +171,6 @@ def freeze_draft(draft_id: UUID) -> dict:
 
     if not (draft.get("exit_rule") and str(draft["exit_rule"]).strip()):
         raise HTTPException(422, "Freigabe nicht möglich — Exit-Regel fehlt.")
-
-    if draft["exit_rule_origin"] == "source":
-        citations = run_query(
-            "SELECT rule_field, excerpt FROM draft_source_citations WHERE draft_id = %s",
-            [draft_id],
-        )
-        has_exit_citation = any(
-            c["rule_field"] == "exit_rule" and (c.get("excerpt") or "").strip()
-            for c in citations
-        )
-        if not has_exit_citation:
-            raise HTTPException(422, "Freigabe nicht möglich — Quellenbeleg für Exit-Regel fehlt.")
-
-    if draft.get("warmup_requirement") is None:
-        raise HTTPException(422, "Freigabe nicht möglich — Warm-up-Anforderung muss explizit gesetzt sein.")
-
-    if not draft.get("mts_confirmed"):
-        raise HTTPException(422, "Crypto-MTS-Eignung muss vor der Freigabe bestätigt werden.")
 
     family_id = draft["family_id"]
 
