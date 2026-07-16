@@ -18,12 +18,7 @@ def main() -> None:
     with psycopg.connect(os.environ["DATABASE_URL"]) as conn, conn.cursor() as cur:
         cur.execute("SELECT pg_advisory_xact_lock(hashtext('strategy_bank_migrations'))")
         for migration in sorted(Path("sql").glob("*.sql")):
-            try:
-                cur.execute(migration.read_text())
-            except Exception as exc:
-                logging.getLogger(__name__).warning(
-                    "Migration %s ignoriert: %s", migration.name, exc
-                )
+            cur.execute(migration.read_text())
         conn.commit()
 
     from app.services.worker import run_worker
