@@ -153,13 +153,13 @@ class TestAuditTrail:
 
     def test_multiple_runs_each_have_own_audit(self, client):
         profile = _make_profile(client)
-        version = _make_frozen_version(client)
+        v1 = _make_frozen_version(client)
+        v2 = _make_frozen_version(client)
         batch = client.post(
             "/batches",
             json={
                 "backtest_profile_id": profile["id"],
-                "strategy_version_ids": [version["id"]],
-                "direction_modes": ["kombiniert", "long-only"],
+                "strategy_version_ids": [v1["id"], v2["id"]],
                 "instruments": [{"provider_symbol": "BYBIT:BTCUSDT.P", "label": "BTC"}],
             },
         ).json()
@@ -170,16 +170,16 @@ class TestAuditTrail:
             }
             client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": 2})
 
-        rows = run_query("SELECT id FROM runs WHERE batch_id = %s ORDER BY direction_mode", [batch["id"]])
+        rows = run_query("SELECT id FROM runs WHERE batch_id = %s ORDER BY strategy_version_id", [batch["id"]])
         assert len(rows) == 2
 
         a1 = client.get(f"/runs/{rows[0]['id']}/audit").json()
         a2 = client.get(f"/runs/{rows[1]['id']}/audit").json()
         assert a1["id"] != a2["id"]
         assert a1["run_id"] != a2["run_id"]
-        assert a1["direction_mode"] == "kombiniert"
-        assert a2["direction_mode"] == "long-only"
-        assert a1["strategy_snapshot"] == a2["strategy_snapshot"]
+        assert a1["direction_mode"] == a2["direction_mode"] == "kombiniert"
+        assert a1["strategy_snapshot"]["version"]["id"] != a2["strategy_snapshot"]["version"]["id"]
+        assert a1["strategy_snapshot"] != a2["strategy_snapshot"]
         assert a1["profile_snapshot"] == a2["profile_snapshot"]
         assert a1["batch_id"] == a2["batch_id"]
 

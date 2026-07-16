@@ -60,8 +60,14 @@ Aus einer Text-/Markdown-Quelle mindestens eine Strategie extrahieren, verifizie
 | PROJ-10 | Positions-, Exit- und Crypto-MTS-Kompatibilitätsmodell | P0 |
 | PROJ-11 | Sidebar-Navigation | P0 |
 | PROJ-12 | Automatische Backtest-Ausführung aus der App | P0 |
+| PROJ-13 | LLM-basierte Pine-Script-Generierung | P0 |
+| PROJ-14 | Markdown-Drag-and-Drop in der Quellenerfassung | P1 |
+| PROJ-15 | Einklappbare Liste vorhandener Batches | P1 |
+| PROJ-16 | Scrollbare Strategieversionsauswahl im Backtest | P1 |
+| PROJ-17 | Instrumente pro Batch aktivieren oder ausblenden | P0 |
+| PROJ-18 | Einfachauswahl für den Richtungsmodus | P0 |
 
-Empfohlene nächste Umsetzung: PROJ-11 → PROJ-12 → PROJ-7. PROJ-9 folgt als P1.
+Empfohlene nächste Umsetzung: PROJ-18 → PROJ-17 → PROJ-14 → PROJ-15 → PROJ-16. PROJ-13 verbleibt bis zur End-to-End-Verifikation in Review.
 
 ## 8. Erfolgsmetriken
 

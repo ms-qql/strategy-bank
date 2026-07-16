@@ -1,6 +1,6 @@
 # Feature Index — Strategy Bank
 
-**Next Available ID:** PROJ-14
+**Next Available ID:** PROJ-19
 
 | ID | Feature | Status | Priorität | Dependencies |
 |---|---|---|---|---|
@@ -17,7 +17,12 @@
 | PROJ-11 | Sidebar-Navigation | Deployed | P0 | PROJ-1, PROJ-4, PROJ-7 |
 | PROJ-12 | Automatische Backtest-Ausführung aus der App | Deployed | P0 | PROJ-5, PROJ-6, PROJ-8 |
 | PROJ-13 | LLM-basierte Pine-Script-Generierung (ersetzt Regex-Übersetzer) | In Review | P0 | PROJ-6, PROJ-2 |
+| PROJ-14 | Markdown-Drag-and-Drop in der Quellenerfassung | Planned | P1 | PROJ-1 |
+| PROJ-15 | Einklappbare Liste vorhandener Batches | Planned | P1 | PROJ-4 |
+| PROJ-16 | Scrollbare Strategieversionsauswahl im Backtest | Planned | P1 | PROJ-4 |
+| PROJ-17 | Instrumente pro Batch aktivieren oder ausblenden | Approved (Backend fix) | P0 | PROJ-4, PROJ-5 |
+| PROJ-18 | Einfachauswahl für den Richtungsmodus | Approved (Frontend + Backend, QA passed) | P0 | PROJ-4 |
 
-**Empfohlene nächste Umsetzung:** PROJ-13 (End-to-End-Verifikation + Commit) → PROJ-11 → PROJ-12 → PROJ-7. PROJ-9 folgt als P1.
+**Empfohlene nächste Umsetzung:** PROJ-18 → PROJ-17 → PROJ-14 → PROJ-15 → PROJ-16. PROJ-13 verbleibt bis zur End-to-End-Verifikation in Review.
 
 **Phase 2 / Phase 3 (nicht in INDEX, siehe `docs/Brainstorm-strategy-bank-v2.md` §17):** PDF/Screenshot-OCR, Hal-Sync, zweiter Agent-Provider, freie Web-Links, anpassbare Kategorien, Multi-Upload, Composite Score, Parameter-Sweeps, Regime-Analyse, Signal-Reverse-Engineering.

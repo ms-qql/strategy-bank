@@ -40,6 +40,15 @@ class TestBuildPrompt:
         )
         assert "Systemdefault" in prompt
 
+    def test_signal_reversal_is_described_without_internal_enum(self):
+        snapshot = {**SNAPSHOT, "position_mode": "signal_reversal"}
+        prompt = pg.build_prompt(
+            snapshot, params=[], timeframe="4h", direction="kombiniert",
+            initial_capital=10_000, commission_pct=0.06, slippage_ticks=2, pyramiding=0,
+        )
+        assert "signal_reversal" not in prompt
+        assert "Gegensignal" in prompt
+
 
 class TestExtractPine:
     def test_extracts_fenced_block(self):
@@ -52,6 +61,10 @@ class TestExtractPine:
 
     def test_rejects_text_without_version_tag(self):
         assert pg._extract_pine("Ich kann das nicht generieren.") == ""
+
+    def test_rejects_internal_position_mode_as_strategy_api(self):
+        raw = '//@version=5\nstrategy("x")\nstrategy.signal_reversal'
+        assert pg._extract_pine(raw) == ""
 
 
 class TestGenerate:

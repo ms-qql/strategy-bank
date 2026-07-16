@@ -24,7 +24,8 @@ from typing import Any
 from .opencode_extraction import run_opencode
 
 _PINE_FENCE_RE = re.compile(r"```(?:pine|pinescript)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
-_VERSION_TAG_RE = re.compile(r"//\s*@version\s*=\s*5")
+_VERSION_TAG_RE = re.compile(r"^//\s*@version\s*=\s*5")
+_INVALID_STRATEGY_MEMBER_RE = re.compile(r"\bstrategy\s*\.\s*(?:signal_reversal|entry_exit)\b")
 
 
 class PineGenerationError(Exception):
@@ -45,6 +46,11 @@ def build_prompt(
     entry_rule = (snapshot.get("entry_rule") or "").strip()
     exit_rule = (snapshot.get("exit_rule") or "").strip()
     position_mode = snapshot.get("position_mode") or "entry_exit"
+    position_mode_description = (
+        "Gegensignal schließt die bestehende Position und eröffnet sofort die Gegenposition"
+        if position_mode == "signal_reversal"
+        else "Entry und Exit werden durch getrennte Regeln gesteuert"
+    )
     thesis = (snapshot.get("thesis") or "").strip()
     category = snapshot.get("category") or "Sonstige"
     warmup = (snapshot.get("warmup_requirement") or "").strip()
@@ -59,7 +65,7 @@ def build_prompt(
 These: {thesis or "(nicht angegeben)"}
 Kategorie: {category}
 Richtung: {direction}
-Positions-Modus: {position_mode} (entry_exit = Entry und Exit getrennt; signal_reversal = Gegensignal schließt und dreht sofort)
+Positionsverwaltung: {position_mode_description}
 Entry-Regel: {entry_rule}
 Exit-Regel: {exit_rule or "(keine explizite Regel — sinnvollen Systemdefault wählen, z.B. Exit nach 10 vollständig vergangenen Bars)"}
 Warmup-Anforderung: {warmup or "(keine Angabe)"}
@@ -79,7 +85,6 @@ Anforderungen an das Script:
   die Bedingung wahr bleibt — sonst zahlt jede Bar erneut Commission/Slippage).
 - Richtung `long-only`/`short-only` nur in die jeweilige Richtung eröffnen; `kombiniert`
   darf beide Richtungen nehmen.
-- `position_mode=signal_reversal`: Gegensignal schließt und eröffnet sofort die Gegenposition.
 - Bei fehlender Exit-Regel: sauberer Bar-Count-Failsafe statt endlos offener Position.
 
 Antworte AUSSCHLIESSLICH mit einem einzigen ```pine-Codeblock (kein Text davor/danach),
@@ -89,7 +94,7 @@ der mit `//@version=5` beginnt."""
 def _extract_pine(raw_text: str) -> str:
     matches = _PINE_FENCE_RE.findall(raw_text)
     candidate = matches[-1].strip() if matches else raw_text.strip()
-    if not _VERSION_TAG_RE.search(candidate):
+    if not _VERSION_TAG_RE.search(candidate) or _INVALID_STRATEGY_MEMBER_RE.search(candidate):
         return ""
     return candidate
 
