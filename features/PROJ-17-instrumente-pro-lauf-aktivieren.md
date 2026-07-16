@@ -186,20 +186,18 @@ Wird es mitgesendet, muss es mindestens ein Instrument enthalten. Leere Listen l
 
 #### Bug 1 (High) — Backend akzeptiert doppelte Provider-Symbole
 - **Spec:** Edge Case „Zwei Zeilen besitzen dasselbe Provider-Symbol: Speichern wird mit „Provider-Symbol ist bereits vorhanden." blockiert."
-- **Status:** Backend validiert nicht. `POST /batches` mit zwei identischen
-  Symbolen → 201. Auch `PATCH` nimmt die Liste ungeprüft. Kein `UNIQUE(batch_id,
-  provider_symbol)`-Constraint, keine App-Logik-Prüfung.
-- **Reproduktion:** `pytest tests/test_proj17_instruments.py::TestDuplicateProviderSymbol -v` →
-  3/3 schlagen fehl mit `201 == 422`.
-- **Impact:** Frontend blockt vor dem Save, aber ein direkter API-Call (z. B.
-  aus einem Skript oder einer späteren API-Erweiterung) legt still einen
-  Batch mit N Duplikat-Runs pro Symbol an. Verdoppelt Credit-Verbrauch
-  und macht Audit-Trail irreführend.
-- **Empfohlener Fix:** Pydantic-Validator in `InstrumentIn` oder
-  List-Validator in `BatchCreate`/`BatchUpdate`/`HoldoutBatchCreate` mit
-  `set(provider_symbol.lower())`-Prüfung. Case-insensitive, weil
-  `BYBIT:BTCUSDT.P` und `bybit:btcusdt.p` für die Run-Vorschau
-  ununterscheidbar sind.
+- **Status:** ✅ **GEFIXT** in Commit nach QA (`fix(PROJ-17)`).
+  `field_validator` auf `BatchCreate`, `BatchUpdate`, `HoldoutBatchCreate`
+  in `app/schemas/batches.py` — case-insensitive Prüfung
+  (`provider_symbol.strip().lower()` in `set`). Liefert 422 mit der
+  Spec-Meldung „Provider-Symbol ist bereits vorhanden."
+- **Begleit-Fix in `app/main.py`:** Der globale `RequestValidationError`-
+  Handler hat Pydantic-Errors bisher direkt (`exc.errors()`) ins JSON
+  geschrieben. Pydantic 2 legt rohe Exception-Instanzen in `ctx.error` ab;
+  ein `ValueError` aus einem benutzerdefinierten Validator war nicht
+  JSON-serialisierbar und produzierte ein 500 statt 422. Fix: `jsonable_encoder`
+  um die Errors wickeln. Vorhandene Handler-Formate (String-`detail` aus
+  `HTTPException`, Pydantic-Listen-`detail`) bleiben unverändert.
 
 #### Bug 2 (Spec-Konflikt) — Leere Instrument-Liste bei Create/Patch
 - **Spec AC 7:** „Leere Listen liefern 422 mit „Bitte mindestens ein Instrument aktivieren.""
@@ -233,14 +231,17 @@ Wird es mitgesendet, muss es mindestens ein Instrument enthalten. Leere Listen l
   Tests.
 
 ### Production-Ready Entscheidung
-**NICHT READY** wegen Bug 1 (High). Bug 1 ist die einzige Hard-Blocker-Stelle;
-Bug 2 ist eine Spec-/Test-Konflikt-Entscheidung; Bug 3 ist UX-Polish.
+- Vor dem Fix: **NICHT READY** wegen Bug 1 (High).
+- Nach Fix: **READY mit Vorbehalt.** Bug 1 behoben, Bug 2 ist eine reine
+  Spec-/Test-Konflikt-Entscheidung (Confirm-Block als letzte Schranke deckt
+  die UX ab), Bug 3 ist UX-Polish und nicht blockierend.
 
-Reihenfolge für `/abc-backoffice`:
-1. Bug 1 fixen: Pydantic-Validator + neue Tests grün.
-2. Bug 2 klären: Entweder Backend-Validierung + bestehenden Test anpassen,
-   oder Spec-AC so umformulieren, dass der Confirm-Pfad die Schranke ist.
-3. Bug 3 nach Bug 1 + 2 als kleiner Polish.
+Offene Punkte für Product-Entscheidung:
+- Bug 2: Soll der bestehende Test `test_explicit_empty_instruments_kept`
+  umgeschrieben werden + Backend-Validierung ergänzt, oder bleibt der
+  Confirm-Pfad die einzige Schranke? Aktueller Stand: nur Confirm.
+- Bug 3: UX-Verbesserung „Bestätigen-Button bei aktiver-leerer Liste im UI
+  deaktivieren" als Follow-up.
 
 ## Deployment
 _To be added by /abc-deploy_

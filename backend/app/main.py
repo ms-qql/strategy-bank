@@ -1,6 +1,7 @@
 """FastAPI-App für Strategy Bank (Solo-Nutzer, kein Mandant/RLS)."""
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -44,7 +45,9 @@ async def _validation_handler(request: Request, exc: RequestValidationError) -> 
     for err in exc.errors():
         if err.get("type") == "uuid_parsing" and err.get("loc", [None])[0] == "path":
             return JSONResponse(status_code=404, content={"detail": "Nicht gefunden."})
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    # Pydantic steckt rohe Exception-Instanzen in ctx (z. B. ValueError aus
+    # benutzerdefinierten Validatoren). jsonable_encoder macht sie JSON-tauglich.
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
 
 @app.exception_handler(ForeignKeyViolation)

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class BacktestProfileWrite(BaseModel):
@@ -35,6 +35,21 @@ class InstrumentIn(BaseModel):
     label: str | None = None
 
 
+def _check_no_duplicate_instruments(value: list[InstrumentIn] | None) -> list[InstrumentIn] | None:
+    """Provider-Symbole sind fachlich eindeutig pro Batch — case-insensitive,
+    weil 'BYBIT:BTCUSDT.P' und 'bybit:btcusdt.p' für die Run-Vorschau nicht
+    unterscheidbar sind und zu identischen Runs führen würden."""
+    if value is None:
+        return value
+    seen: set[str] = set()
+    for instr in value:
+        key = instr.provider_symbol.strip().lower()
+        if key in seen:
+            raise ValueError("Provider-Symbol ist bereits vorhanden.")
+        seen.add(key)
+    return value
+
+
 class BatchCreate(BaseModel):
     backtest_profile_id: UUID
     strategy_version_ids: list[UUID] = Field(min_length=1)
@@ -44,12 +59,22 @@ class BatchCreate(BaseModel):
     period_start: date | None = None
     period_end: date | None = None
 
+    @field_validator("instruments")
+    @classmethod
+    def _no_duplicate_instruments(cls, v: list[InstrumentIn] | None) -> list[InstrumentIn] | None:
+        return _check_no_duplicate_instruments(v)
+
 
 class HoldoutBatchCreate(BaseModel):
     backtest_profile_id: UUID
     instruments: list[InstrumentIn] | None = None
     direction_modes: list[str] | None = None
     timeframe: str | None = None
+
+    @field_validator("instruments")
+    @classmethod
+    def _no_duplicate_instruments(cls, v: list[InstrumentIn] | None) -> list[InstrumentIn] | None:
+        return _check_no_duplicate_instruments(v)
 
 
 class BatchUpdate(BaseModel):
@@ -60,6 +85,11 @@ class BatchUpdate(BaseModel):
     timeframe: str | None = None
     period_start: date | None = None
     period_end: date | None = None
+
+    @field_validator("instruments")
+    @classmethod
+    def _no_duplicate_instruments(cls, v: list[InstrumentIn] | None) -> list[InstrumentIn] | None:
+        return _check_no_duplicate_instruments(v)
 
 
 class InstrumentRead(BaseModel):
