@@ -72,6 +72,12 @@ def generate(
     if exit_rule:
         lines.append(f"// exit: {exit_rule}")
     lines.append("")
+    lines.append(
+        f"strategy(\"Strategy Bank\", overlay=true, initial_capital={initial_capital}, "
+        f"commission_type=strategy.commission.percent, commission_value={commission_pct}, "
+        f"slippage={slippage_ticks}, pyramiding={pyramiding})"
+    )
+    lines.append("")
 
     param_lines = _build_param_declarations(context)
     if param_lines:

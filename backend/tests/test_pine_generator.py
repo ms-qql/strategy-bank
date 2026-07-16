@@ -74,6 +74,7 @@ class TestPineGeneration:
         assert "ta.rsi(close, 14)" in code
         assert "strategy.entry" in code
         assert "strategy.close_all" in code
+        assert code.index("strategy(") < code.index("strategy.close_all")
 
     def test_long_only(self):
         snapshot = {
