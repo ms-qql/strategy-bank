@@ -16,6 +16,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 
 def main() -> None:
     with psycopg.connect(os.environ["DATABASE_URL"]) as conn, conn.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(hashtext('strategy_bank_migrations'))")
         for migration in sorted(Path("sql").glob("*.sql")):
             try:
                 cur.execute(migration.read_text())
