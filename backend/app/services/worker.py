@@ -8,7 +8,7 @@ Aufgabe:
   4. Idempotency-Key aus Run-Parametern bauen
   5. Existierende backtest_execution finden oder neue anlegen
   6. Pine-v5-Übersetzung aus strategy_versions.snapshot generieren
-  7. run_backtest via OpenCode/trader.dev MCP starten
+  7. run_backtest direkt via trader.dev MCP starten
   8. get_backtest_result pollen
   9. Ergebnis in backtest_executions speichern, Run-Status aktualisieren
 
@@ -18,10 +18,8 @@ HTTP-Timeout-Problem bei minutenlangen Backtests.
 
 import json
 import logging
-import subprocess
 import time
 from datetime import datetime, timezone
-from typing import Any
 from uuid import UUID
 
 import psycopg
@@ -29,12 +27,12 @@ from psycopg.rows import dict_row
 
 from ..config import settings
 from .pine_generator import PineGenerationError, generate as generate_pine
+from .trader_dev import TraderDevServiceError, get_backtest_result, start_backtest
 
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 30
 HEARTBEAT_INTERVAL_SECONDS = 30
-MCP_TIMEOUT_SECONDS = 60
 RUN_LIMIT = 5
 
 WORKER_ID = "strategy-bank-worker-v1"
@@ -230,59 +228,34 @@ def _submit_backtest(cur, run_id: UUID, exec_row: dict) -> None:
         [_epoch(), exec_row["id"]],
     )
 
-    prompt = _build_run_prompt(exec_row)
     try:
-        result = subprocess.run(
-            [
-                settings.opencode_binary, "run", prompt,
-                "--format", "json", "-m", settings.extraction_model,
-            ],
-            capture_output=True, text=True, timeout=MCP_TIMEOUT_SECONDS,
+        output = start_backtest(
+            pine_source=exec_row["pine_source"], symbol=exec_row["provider_symbol"],
+            timeframe=exec_row["timeframe"], period_start=exec_row["period_start"],
+            period_end=exec_row.get("period_end"),
         )
-    except subprocess.TimeoutExpired:
-        _mark_failed(cur, run_id, exec_row, "trader.dev-Aufruf: Timeout (60s).", "trader_dev_timeout")
-        return
-
-    if result.returncode != 0:
-        _mark_failed(cur, run_id, exec_row, f"OpenCode Exit {result.returncode}.", "opencode_error")
-        return
-
-    output = _parse_json_output(result.stdout)
-    if output.get("error"):
-        _mark_failed(cur, run_id, exec_row, output["error"], "backtest_error")
+    except TraderDevServiceError as exc:
+        _mark_failed(cur, run_id, exec_row, str(exc), "trader_dev_error")
         return
 
     job_id = output.get("jobId") or output.get("job_id")
-    if job_id:
-        cur.execute(
-            "UPDATE backtest_executions SET external_job_id = %s, provider_status = 'running' WHERE id = %s",
-            [str(job_id), exec_row["id"]],
-        )
+    if not job_id:
+        _mark_failed(cur, run_id, exec_row, "trader.dev lieferte keine Job-ID.", "trader_dev_response")
+        return
+    cur.execute(
+        "UPDATE backtest_executions SET external_job_id = %s, provider_status = 'running' WHERE id = %s",
+        [str(job_id), exec_row["id"]],
+    )
 
 
 def _check_existing_job(cur, run_id: UUID, exec_row: dict) -> None:
     if not exec_row.get("external_job_id"):
         return
     cur.execute("UPDATE runs SET status = 'läuft' WHERE id = %s", [run_id])
-    prompt = (
-        f"Call the trader_dev_get_backtest_result tool with jobId={exec_row['external_job_id']}. "
-        "Output ONLY the raw JSON result inside a ```json code block. No commentary."
-    )
     try:
-        result = subprocess.run(
-            [
-                settings.opencode_binary, "run", prompt,
-                "--format", "json", "-m", settings.extraction_model,
-            ],
-            capture_output=True, text=True, timeout=MCP_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired:
+        output = get_backtest_result(exec_row["external_job_id"])
+    except TraderDevServiceError:
         return
-
-    if result.returncode != 0:
-        return
-
-    output = _parse_json_output(result.stdout)
     if output.get("status") == "completed" and output.get("result"):
         cur.execute(
             "UPDATE backtest_executions SET backtest_result = %s, provider_status = 'completed', completed_at = %s WHERE id = %s",
@@ -317,49 +290,6 @@ def _mark_failed(cur, run_id: UUID, exec_row: dict, message: str, category: str)
         )
     except Exception:
         pass
-
-
-def _build_run_prompt(exec_row: dict) -> str:
-    return (
-        f"Call the trader_dev_quick_backtest tool with:\n"
-        f"- pineSource (full Pine Script v5):\n```pinescript\n{exec_row['pine_source']}\n```\n"
-        f"- symbol: {exec_row['provider_symbol']}\n"
-        f"- timeframe: {exec_row['timeframe']}\n"
-        f"- from: {exec_row['period_start']}\n"
-        f"{'- to: ' + str(exec_row['period_end']) if exec_row.get('period_end') else ''}\n"
-        f"Output ONLY the raw JSON result inside a ```json code block. No commentary."
-    )
-
-
-def _parse_json_output(stdout: str) -> dict[str, Any]:
-    parts: list[str] = []
-    for line in stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if event.get("type") == "error":
-            msg = event.get("error", {}).get("data", {}).get("message", "Unbekannt")
-            return {"error": msg}
-        part = event.get("part") or {}
-        if part.get("type") == "text" and part.get("text"):
-            parts.append(part["text"])
-    text = "\n".join(parts)
-    import re
-    fence = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
-    m = fence.findall(text)
-    candidate = m[-1].strip() if m else text.strip()
-    if candidate.startswith("{"):
-        end = candidate.rfind("}")
-        if end != -1:
-            candidate = candidate[:end + 1]
-    try:
-        return json.loads(candidate)
-    except json.JSONDecodeError:
-        return {}
 
 
 def _load_strategy_details(cur, version_id: UUID) -> dict:

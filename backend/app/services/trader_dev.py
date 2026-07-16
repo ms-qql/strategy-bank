@@ -15,28 +15,15 @@ class CreditServiceError(RuntimeError):
     """get_credits fehlgeschlagen — Batch-Start muss blockieren."""
 
 
+class TraderDevServiceError(RuntimeError):
+    """trader.dev-MCP-Aufruf fehlgeschlagen."""
+
+
 def get_credits() -> dict[str, Any]:
     """Live-Abruf ohne den API-Key an ein Modell weiterzugeben."""
-    if not settings.trader_dev_api_key:
-        raise CreditServiceError("TRADER_DEV_API_KEY ist nicht gesetzt.")
     try:
-        with urlopen(Request(_SSE_URL, headers={"Accept": "text/event-stream", "User-Agent": "strategy-bank/1.0"}), timeout=30) as stream:
-            endpoint = _next_sse_data(stream)
-            _mcp_post(endpoint, 1, "initialize", {
-                "protocolVersion": "2024-11-05", "capabilities": {},
-                "clientInfo": {"name": "strategy-bank", "version": "1"},
-            })
-            _next_mcp_result(stream, 1)
-            _mcp_post(endpoint, None, "notifications/initialized", {})
-            _mcp_post(endpoint, 2, "tools/call", {
-                "name": "authenticate", "arguments": {"key": settings.trader_dev_api_key},
-            })
-            auth = _next_mcp_result(stream, 2)
-            if auth.get("isError"):
-                raise ValueError("trader.dev hat den API-Key abgelehnt.")
-            _mcp_post(endpoint, 3, "tools/call", {"name": "get_credits", "arguments": {}})
-            parsed = _tool_json(_next_mcp_result(stream, 3))
-    except (OSError, TimeoutError, URLError, ValueError, json.JSONDecodeError) as exc:
+        parsed = _call_tool("get_credits", {})
+    except TraderDevServiceError as exc:
         raise CreditServiceError(f"trader.dev-Credit-Abfrage fehlgeschlagen: {exc}") from exc
 
     balance = _first(parsed, "balance", "credits", "creditsRemaining")
@@ -48,6 +35,43 @@ def get_credits() -> dict[str, Any]:
         "reset": str(_first(parsed, "nextReset", "next_reset", "weeklyReset") or "unbekannt"),
         "weekly_free": int(_first(parsed, "weeklyFreeCredits", "weekly_free_credits") or 0),
     }
+
+
+def start_backtest(*, pine_source: str, symbol: str, timeframe: str, period_start: Any, period_end: Any) -> dict[str, Any]:
+    arguments: dict[str, Any] = {
+        "pineSource": pine_source,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "from": str(period_start),
+    }
+    if period_end:
+        arguments["to"] = str(period_end)
+    return _call_tool("quick_backtest", arguments)
+
+
+def get_backtest_result(job_id: str) -> dict[str, Any]:
+    return _call_tool("get_backtest_result", {"jobId": job_id})
+
+
+def _call_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    if not settings.trader_dev_api_key:
+        raise TraderDevServiceError("TRADER_DEV_API_KEY ist nicht gesetzt.")
+    try:
+        with urlopen(Request(_SSE_URL, headers={"Accept": "text/event-stream", "User-Agent": "strategy-bank/1.0"}), timeout=30) as stream:
+            endpoint = _next_sse_data(stream)
+            _mcp_post(endpoint, 1, "initialize", {
+                "protocolVersion": "2024-11-05", "capabilities": {},
+                "clientInfo": {"name": "strategy-bank", "version": "1"},
+            })
+            _next_mcp_result(stream, 1)
+            _mcp_post(endpoint, None, "notifications/initialized", {})
+            _mcp_post(endpoint, 2, "tools/call", {"name": "authenticate", "arguments": {"key": settings.trader_dev_api_key}})
+            if _next_mcp_result(stream, 2).get("isError"):
+                raise ValueError("trader.dev hat den API-Key abgelehnt.")
+            _mcp_post(endpoint, 3, "tools/call", {"name": name, "arguments": arguments})
+            return _tool_json(_next_mcp_result(stream, 3))
+    except (OSError, TimeoutError, URLError, ValueError, json.JSONDecodeError) as exc:
+        raise TraderDevServiceError(str(exc)) from exc
 
 
 def _mcp_post(endpoint: str, request_id: int | None, method: str, params: dict[str, Any]) -> None:
