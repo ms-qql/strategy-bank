@@ -209,7 +209,7 @@ def _find_or_create_execution(cur, run: dict, identity_key: str) -> dict:
             identity_key, run["strategy_version_id"], run["provider_symbol"],
             strategy.get("timeframe", "1h"), strategy.get("period_start", "2021-01-01"),
             strategy.get("period_end"), run["direction_mode"],
-            strategy.get("profile_id", run.get("batch_id", "")),
+            strategy["backtest_profile_id"],
             run.get("run_kind", "standard"),
             pine_source,
             WORKER_ID,

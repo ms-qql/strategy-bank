@@ -1,5 +1,5 @@
 """PROJ-6: Queue und trader.dev-Ausführung — Backend-Tests."""
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -324,6 +324,19 @@ class TestRetry:
 
 
 class TestRunBacktestExecution:
+    def test_worker_uses_backtest_profile_id_for_execution(self):
+        from app.services import worker
+
+        cur = MagicMock()
+        cur.fetchone.side_effect = [None, {"id": uuid4()}]
+        run = {"id": uuid4(), "strategy_version_id": uuid4(), "provider_symbol": "BYBIT:BTCUSDT.P", "direction_mode": "kombiniert", "run_kind": "standard"}
+        profile_id = uuid4()
+
+        with patch.object(worker, "_load_strategy_details", return_value={"backtest_profile_id": profile_id}):
+            worker._find_or_create_execution(cur, run, "test-key")
+
+        assert cur.execute.call_args_list[1].args[1][7] == profile_id
+
     def test_run_with_backtest_execution_shows_metrics(self, client):
         batch = _make_confirmed_batch(client)
         runs_resp = client.get(f"/batches/{batch['id']}/runs")
