@@ -9,5 +9,15 @@
         "apiKey": "{env:OPENCODE_GO_API_KEY}"
       }
     }
+  },
+  "mcp": {
+    "trader-dev": {
+      "type": "remote",
+      "url": "https://mcp.trader.dev/sse",
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {env:TRADER_DEV_API_KEY}"
+      }
+    }
   }
 }
