@@ -58,12 +58,15 @@ Aus einer Text-/Markdown-Quelle mindestens eine Strategie extrahieren, verifizie
 | PROJ-8 | Audit-Trail | P0 |
 | PROJ-9 | Markdown-Export | P1 |
 | PROJ-10 | Positions-, Exit- und Crypto-MTS-Kompatibilitätsmodell | P0 |
+| PROJ-11 | Sidebar-Navigation | P0 |
+| PROJ-12 | Automatische Backtest-Ausführung aus der App | P0 |
 
-Empfohlene Build-Reihenfolge: PROJ-1 → PROJ-2 → PROJ-3 → PROJ-4 → PROJ-5 → PROJ-8 → PROJ-10 → PROJ-6 → PROJ-7. PROJ-9 folgt als P1.
+Empfohlene nächste Umsetzung: PROJ-11 → PROJ-12 → PROJ-7. PROJ-9 folgt als P1.
 
 ## 8. Erfolgsmetriken
 
 - Mindestens eine Strategie durchläuft Quelle → Extraktion → Freigabe → 3-Instrumente-Batch → Ergebnisvergleich ohne manuelle Datenübertragung.
+- Ein bestätigter Batch wird vollständig aus der App über trader.dev ausgeführt, ohne separaten Terminal-Befehl oder manuellen Worker-Start.
 - Jedes Ergebnis ist auf Strategieversion, Backtest-Profil und trader.dev-Report zurückführbar (Audit-Trail vollständig, stichprobenartig geprüft).
 - Keine cascade-exit-fehlerhaften Ergebnisse werden ungefiltert als gültig angezeigt.
 

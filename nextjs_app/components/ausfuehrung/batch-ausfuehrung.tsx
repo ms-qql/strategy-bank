@@ -30,9 +30,11 @@ import {
   type RunStatus,
   type VersionSummary,
 } from "@/lib/schemas/batch";
+import { useRouter } from "next/navigation";
 import {
   Check,
   Circle,
+  FileSearch,
   Loader,
   Play,
   RotateCcw,
@@ -385,11 +387,13 @@ function RunZeile({
   onCancel: (runId: string) => void;
   onRetry: (runId: string) => void;
 }) {
+  const router = useRouter();
   const versionName =
     versions.find((v) => v.id === run.strategy_version_id)?.name ??
     run.strategy_version_id.slice(0, 8);
 
   const metrics = run.backtest_metrics;
+  const isCompleted = ["erfolgreich", "fehlgeschlagen", "abgebrochen"].includes(run.status);
 
   return (
     <TableRow>
@@ -486,6 +490,17 @@ function RunZeile({
             )}
             <RotateCcw className="mr-1 h-3 w-3" />
             Wiederholen
+          </Button>
+        )}
+        {isCompleted && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push(`/runs/${run.id}/audit`)}
+            className="ml-1"
+          >
+            <FileSearch className="mr-1 h-3 w-3" />
+            Audit
           </Button>
         )}
       </TableCell>
