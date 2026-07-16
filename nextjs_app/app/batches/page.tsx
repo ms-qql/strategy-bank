@@ -848,7 +848,7 @@ function BatchesPageInner() {
                     <Button
                       variant="default"
                       onClick={handleConfirm}
-                      disabled={confirming || preview.length === 0 || !creditStatus || creditMax < preview.length}
+                      disabled={confirming || preview.length === 0 || creditMax < preview.length}
                     >
                       {confirming && <Loader className="mr-1 h-4 w-4 animate-spin" />}
                       Batch bestätigen

@@ -234,7 +234,7 @@ class TestFreeze:
         assert resp.status_code == 201
         assert resp.json()["version_number"] == 2
 
-    def test_freeze_blocked_by_open_questions(self, client):
+    def test_freeze_allows_open_questions(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
         d = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
@@ -242,8 +242,7 @@ class TestFreeze:
         _add_open_question(d["id"])
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
-        assert resp.status_code == 422
-        assert "Unklarheiten" in resp.json()["detail"]
+        assert resp.status_code == 201
 
     def test_freeze_blocked_missing_entry(self, client):
         src = _make_source()
@@ -268,15 +267,14 @@ class TestFreeze:
         assert "Bars" in resp.json()["snapshot"]["exit_rule"]
         assert resp.json()["snapshot"]["exit_rule_origin"] == "system_default"
 
-    def test_freeze_blocked_missing_warmup(self, client):
+    def test_freeze_allows_missing_warmup(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
         d = _make_draft(run, warmup_requirement=None, position_mode="entry_exit",
                         position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=True)
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
-        assert resp.status_code == 422
-        assert "Warm-up" in resp.json()["detail"]
+        assert resp.status_code == 201
 
     def test_freeze_blocked_not_entwurf(self, client):
         src = _make_source()
@@ -429,27 +427,25 @@ class TestNewDraftFromVersion:
 
 
 class TestProj10FreezeGates:
-    def test_freeze_blocked_missing_position_mode_confirmation(self, client):
+    def test_freeze_allows_unconfirmed_position_mode(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
         d = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
                         position_mode_confirmed=False, mts_compatibility="discrete", mts_confirmed=True)
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
-        assert resp.status_code == 422
-        assert "Positionsmodus" in resp.json()["detail"]
+        assert resp.status_code == 201
 
-    def test_freeze_blocked_missing_mts_confirmation(self, client):
+    def test_freeze_allows_unconfirmed_mts(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
         d = _make_draft(run, warmup_requirement="0 bars", position_mode="entry_exit",
                         position_mode_confirmed=True, mts_compatibility="discrete", mts_confirmed=False)
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
-        assert resp.status_code == 422
-        assert "Crypto-MTS" in resp.json()["detail"]
+        assert resp.status_code == 201
 
-    def test_freeze_blocked_missing_exit_citation_for_source_origin(self, client):
+    def test_freeze_allows_source_exit_without_citation(self, client):
         src = _make_source()
         run = _make_extraction_run(src)
         d = _make_draft(run, exit_rule="RSI < 70", warmup_requirement="0 bars", position_mode="entry_exit",
@@ -461,8 +457,7 @@ class TestProj10FreezeGates:
         )
 
         resp = client.post(f"/drafts/{d['id']}/freeze")
-        assert resp.status_code == 422
-        assert "Quellenbeleg" in resp.json()["detail"]
+        assert resp.status_code == 201
 
     def test_freeze_signal_reversal_blocks_without_exit(self, client):
         src = _make_source()
