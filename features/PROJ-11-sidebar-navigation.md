@@ -1,8 +1,9 @@
 # PROJ-11: Sidebar-Navigation
 
-## Status: Architected
+## Status: Deployed
 **Created:** 2026-07-15
-**Last Updated:** 2026-07-15
+**Last Updated:** 2026-07-16
+**Deployed Version:** v0.2.6
 
 ## Dependencies
 - Requires: PROJ-1 (Quellenerfassung) — Zielseite „Quellen“.
