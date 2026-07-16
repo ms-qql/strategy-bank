@@ -1,192 +1,77 @@
-"""PROJ-6 Pine-Generator Tests."""
+"""PROJ-6 Pine-Generator Tests — LLM-basierter Ansatz (ersetzt Regex-Übersetzer)."""
 import pytest
-from app.services.pine_generator import (
-    PineGenerationError,
-    _is_bar_count_exit,
-    _translate_rule,
-    _build_context,
-    generate,
-)
+from app.services import pine_generator as pg
 
 
-class TestBarCountExit:
-    def test_detects_german_default(self):
-        assert _is_bar_count_exit("Exit nach 10 vollständig vergangenen Bars")
-
-    def test_detects_english(self):
-        assert _is_bar_count_exit("Exit after 10 completed bars")
-
-    def test_rejects_normal_rule(self):
-        assert not _is_bar_count_exit("RSI > 70")
-
-
-class TestRSITranslation:
-    def test_rsi_below(self):
-        expr = _translate_rule("RSI < 30", {})
-        assert "ta.rsi(close, 14)" in expr
-        assert "< 30" in expr
-
-    def test_rsi_with_explicit_period(self):
-        expr = _translate_rule("RSI(7) < 25", {})
-        assert "ta.rsi(close, 7)" in expr
-        assert "< 25" in expr
-
-    def test_rsi_with_parameter(self):
-        ctx = _build_context([{"name": "RSI Period", "value": "21", "unit": ""}])
-        expr = _translate_rule("RSI < 30", ctx)
-        assert "rsi_period" in expr or "21" in expr
+SNAPSHOT = {
+    "thesis": "Mean-Reversion via RSI",
+    "category": "Mean Reversion",
+    "direction": "kombiniert",
+    "entry_rule": "RSI > 30",
+    "exit_rule": "RSI < 70",
+    "position_mode": "entry_exit",
+    "parameters": [{"name": "RSI Length", "value": "14", "unit": "bars"}],
+}
 
 
-class TestSMATranslation:
-    def test_close_gt_sma(self):
-        expr = _translate_rule("Close > SMA(200)", {})
-        assert "close" in expr
-        assert "ta.sma(close" in expr
-        assert "200" in expr
+class TestBuildPrompt:
+    def test_includes_snapshot_fields(self):
+        prompt = pg.build_prompt(
+            SNAPSHOT,
+            params=SNAPSHOT["parameters"],
+            timeframe="4h",
+            direction="kombiniert",
+            initial_capital=10_000,
+            commission_pct=0.06,
+            slippage_ticks=2,
+            pyramiding=0,
+        )
+        assert "RSI > 30" in prompt
+        assert "RSI < 70" in prompt
+        assert "RSI Length" in prompt
+        assert "4h" in prompt
+        assert "```pine" in prompt
 
-    def test_close_cross_above_sma(self):
-        expr = _translate_rule("Close crosses above SMA(50)", {})
-        assert "ta.crossover(close, ta.sma(close, 50))" in expr
+    def test_missing_exit_rule_asks_for_default(self):
+        snapshot = {**SNAPSHOT, "exit_rule": ""}
+        prompt = pg.build_prompt(
+            snapshot, params=[], timeframe="1h", direction="kombiniert",
+            initial_capital=10_000, commission_pct=0.06, slippage_ticks=2, pyramiding=0,
+        )
+        assert "Systemdefault" in prompt
 
 
-class TestAndOrSplit:
-    def test_and_condition(self):
-        expr = _translate_rule("RSI < 30 AND Close > SMA(200)", {})
-        assert "and" in expr
-        assert "ta.rsi" in expr
-        assert "ta.sma" in expr
+class TestExtractPine:
+    def test_extracts_fenced_block(self):
+        raw = "Hier ist das Script:\n```pine\n//@version=5\nstrategy(\"x\")\n```\nFertig."
+        assert pg._extract_pine(raw) == '//@version=5\nstrategy("x")'
 
-    def test_or_condition(self):
-        expr = _translate_rule("RSI < 30 OR MACD crosses above zero", {})
-        assert "or" in expr.lower() or "or" in expr
+    def test_extracts_unfenced_source(self):
+        raw = '//@version=5\nstrategy("x")'
+        assert pg._extract_pine(raw) == raw
+
+    def test_rejects_text_without_version_tag(self):
+        assert pg._extract_pine("Ich kann das nicht generieren.") == ""
 
 
-class TestPineGeneration:
-    def test_minimal_strategy(self):
-        snapshot = {
-            "entry_rule": "RSI < 30",
-            "exit_rule": "",
-            "direction": "kombiniert",
-            "position_mode": "entry_exit",
-        }
-        code = generate(snapshot)
-        assert "// @version=5" in code
-        assert "ta.rsi(close, 14)" in code
-        assert "strategy.entry" in code
-        assert "strategy.close_all" in code
-        assert code.index("strategy(") < code.index("strategy.close_all")
-
-    def test_long_only(self):
-        snapshot = {
-            "entry_rule": "Close > SMA(20)",
-            "exit_rule": "Exit nach 10 vollständig vergangenen Bars",
-            "direction": "long-only",
-            "position_mode": "entry_exit",
-        }
-        code = generate(snapshot)
-        assert "strategy.long" in code
-        assert "strategy.short" not in code
-
-    def test_signal_reversal(self):
-        snapshot = {
-            "entry_rule": "RSI crosses above 30",
-            "exit_rule": "",
-            "direction": "kombiniert",
-            "position_mode": "signal_reversal",
-        }
-        code = generate(snapshot)
-        assert "signal reversal" in code.lower()
-
-    def test_with_parameters(self):
-        snapshot = {
-            "entry_rule": "RSI < 30 AND Close > SMA(200)",
-            "exit_rule": "",
-            "direction": "kombiniert",
-            "position_mode": "entry_exit",
-        }
-        params = [
-            {"name": "RSI Period", "value": "14", "unit": ""},
-            {"name": "SMA Period", "value": "200", "unit": ""},
-        ]
-        code = generate(snapshot, params)
-        assert "input.float" in code
-
-    def test_bar_count_exit(self):
-        snapshot = {
-            "entry_rule": "RSI < 30",
-            "exit_rule": "Exit nach 10 vollständig vergangenen Bars",
-            "direction": "kombiniert",
-            "position_mode": "entry_exit",
-        }
-        code = generate(snapshot)
-        assert "_barSinceEntry" in code
-
+class TestGenerate:
     def test_missing_entry_raises(self):
-        with pytest.raises(PineGenerationError, match="Entry-Regel fehlt"):
-            generate({"entry_rule": "", "exit_rule": "RSI > 70"})
+        with pytest.raises(pg.PineGenerationError, match="Entry-Regel fehlt"):
+            pg.generate({"entry_rule": "", "exit_rule": "RSI > 70"})
 
-    def test_unrecognized_rule_raises(self):
-        with pytest.raises(PineGenerationError, match="übersetzbar"):
-            _translate_rule("Some exotic indicator pattern", {})
+    def test_returns_llm_pine_source(self, monkeypatch):
+        monkeypatch.setattr(pg, "run_opencode", lambda prompt: "```pine\n//@version=5\nstrategy(\"x\")\n```")
+        code = pg.generate(SNAPSHOT)
+        assert code == '//@version=5\nstrategy("x")'
 
-    def test_macd_crossover(self):
-        expr = _translate_rule("MACD crosses above signal", {})
-        assert "ta.crossover" in expr
-        assert "ta.macd" in expr
+    def test_invalid_llm_output_raises(self, monkeypatch):
+        monkeypatch.setattr(pg, "run_opencode", lambda prompt: "Kann ich nicht generieren.")
+        with pytest.raises(pg.PineGenerationError, match="kein gültiges Pine"):
+            pg.generate(SNAPSHOT)
 
-    def test_volume_condition(self):
-        expr = _translate_rule("Volume > SMA(20)", {})
-        assert "volume" in expr
-        assert "ta.sma(volume" in expr
-
-    def test_build_context(self):
-        ctx = _build_context([
-            {"name": "RSI Period", "value": "14", "unit": ""},
-            {"name": "SMA Fast", "value": "50", "unit": ""},
-        ])
-        assert "rsi_period" in ctx or len(ctx) == 2
-
-
-class TestPineScriptValidity:
-    """Checks that generated Pine code contains required structural elements."""
-
-    def test_has_strategy_declaration(self):
-        snapshot = {
-            "entry_rule": "RSI < 30",
-            "exit_rule": "",
-            "direction": "kombiniert",
-            "position_mode": "entry_exit",
-        }
-        code = generate(snapshot)
-        assert "// @version=5" in code
-        assert "strategy.entry" in code
-
-    def test_has_bar_tracking(self):
-        snapshot = {
-            "entry_rule": "RSI < 30",
-            "exit_rule": "",
-            "direction": "kombiniert",
-            "position_mode": "entry_exit",
-        }
-        code = generate(snapshot)
-        assert "_barSinceEntry" in code
-
-    def test_has_fail_safe(self):
-        snapshot = {
-            "entry_rule": "RSI < 30",
-            "exit_rule": "",
-            "direction": "kombiniert",
-            "position_mode": "entry_exit",
-        }
-        code = generate(snapshot)
-        assert "fail-safe" in code or "close_all" in code
-
-    def test_short_only_inverts(self):
-        snapshot = {
-            "entry_rule": "RSI < 30",
-            "exit_rule": "",
-            "direction": "short-only",
-            "position_mode": "entry_exit",
-        }
-        code = generate(snapshot)
-        assert "strategy.short" in code
+    def test_llm_call_failure_raises(self, monkeypatch):
+        def _boom(prompt):
+            raise RuntimeError("OpenCode-Prozess beendet mit Code 1")
+        monkeypatch.setattr(pg, "run_opencode", _boom)
+        with pytest.raises(pg.PineGenerationError, match="fehlgeschlagen"):
+            pg.generate(SNAPSHOT)
