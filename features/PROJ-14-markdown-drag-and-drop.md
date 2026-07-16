@@ -1,6 +1,6 @@
 # PROJ-14: Markdown-Drag-and-Drop in der Quellenerfassung
 
-## Status: Approved (Frontend + QA passed)
+## Status: Deployed
 **Created:** 2026-07-16
 **Last Updated:** 2026-07-16
 
@@ -235,4 +235,7 @@ Keine.
 `node screenshots/test/proj14-dropzone.cjs` — 16 assertions, idempotent, headless Chromium 1440×900 (plus 375/768 für Responsive). Voraussetzungen: Next.js `next start -p 3120` mit `BACKEND_URL=http://localhost:8200` und FastAPI-Backend auf `:8200`.
 
 ## Deployment
-_To be added by /abc-deploy_
+**Deployed:** 2026-07-16, Version v0.2.24.
+**Inhalt:** `MarkdownDropzone`-Komponente (`nextjs_app/components/quellen/markdown-dropzone.tsx`) ersetzt das reine `<input type="file">` in der Quellenerfassung durch Drag-and-Drop + Klick-Fallback; globaler Fensterschutz verhindert Browser-Navigation bei Datei-Drop außerhalb der Zone.
+**Commit:** `7af10d6 feat(PROJ-14): Markdown drag-and-drop dropzone in Quellen view` (plus vorgelagerte Design-/QA-Commits `c6b6b77`, `1c33e2c`).
+**Push:** `origin/main` (Auto-Deploy auf Dokploy, `docker-compose.dokploy.yml`).
