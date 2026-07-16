@@ -211,7 +211,7 @@ function BatchesPageInner() {
     loadInitial();
   }, [loadInitial]);
 
-  const isConfirmed = batch?.status !== "entwurf";
+  const isConfirmed = batch != null && batch.status !== "entwurf";
   const isStandardBatch = !batch || batch.run_kind === "standard";
 
   const toggleVersion = (id: string) => {
