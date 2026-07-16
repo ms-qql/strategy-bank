@@ -38,6 +38,18 @@ LLM-Schreibschritt verlagern (wie im Terminaltest), und trader.dev den Rest
 überlassen (Symbol-Resolve, Backtest-Ausführung, Versionierung,
 Cascade-Exit-Erkennung).
 
+**Nachträgliche Klärung (2026-07-16, nach Nutzerrückfrage):** Im Terminaltest
+hat nicht trader.dev den Prompt-Text erhalten. Der Text war der Prompt **an
+Claude** (die Terminal-Session); Claude hat daraus selbst das Pine-Script
+geschrieben und dieses (nicht den Prompt-Text) als `pineSource`-Argument an
+`quick_backtest` übergeben — das MCP-Tool-Schema erzwingt das (`required:
+pineSource`), unabhängig davon, dass die Claude-Code-Oberfläche den Tool-Call
+nur als kollabierten „Called trader-dev“-Einzeiler anzeigt und die vollen
+Argumente nicht inline sichtbar macht. Das bestätigt exakt die BUG-2-Prämisse
+unten: der Terminaltest bewies, dass **Claude** als Pine-Autor sehr schnell
+und sauber funktioniert — er bewies nichts über das in der App tatsächlich
+verdrahtete Modell (`opencode-go/deepseek-v4-flash`).
+
 ## User Stories
 - Als Trader möchte ich, dass ein bestätigter Strategie-Entwurf zuverlässig in ein lauffähiges Pine-Script übersetzt wird, unabhängig von der genauen Formulierung der Entry-/Exit-Regel.
 - Als Trader möchte ich nicht mehr wiederholt fehlschlagende Runs wegen „nicht übersetzbarer“ Regeln sehen, wenn die Regel inhaltlich eindeutig ist.
@@ -188,4 +200,6 @@ Hinweis: Dieses Projekt hat kein JWT/Mandanten-Modell (Single-Tenant-Tool, per P
 - **Recommendation:** Vor Approval (a) BUG-1 fixen (strengere `_extract_pine`-Prüfung), (b) BUG-2 auflösen — mit echtem `OPENCODE_GO_API_KEY` mindestens 2-3 reale Drafts durch `generate()` laufen lassen und das deepseek-v4-flash-Ergebnis bewerten, (c) einen Draft sauber über `/drafts/{id}/freeze` einfrieren, damit ein vollständiger Worker-E2E-Lauf überhaupt möglich ist, (d) danach committen und diesen QA-Durchlauf wiederholen.
 
 ## Deployment
-**Status:** Noch nicht deployed. Blockiert durch BUG-1/BUG-2 (siehe QA-Empfehlung), danach Commit, danach `/abc-deploy`.
+**Entscheidung (2026-07-16, Nutzer):** Bewusster Test-Deploy auf main trotz offener BUG-1/BUG-2 — Ziel ist, BUG-2 (unbewiesene Modell-Qualität von `opencode-go/deepseek-v4-flash`) erst in der echten Umgebung zu klären, da dort `OPENCODE_GO_API_KEY` gesetzt ist (in der Dev-Sandbox fehlt er, siehe BUG-2-Exploration). Das ist kein QA-Approval — BUG-1 bleibt ungefixt im deployten Code, Status bleibt **In Review** bis reale `generate()`-Ergebnisse ausgewertet sind.
+
+**Nächster Schritt nach diesem Deploy:** einen Draft sauber über `/drafts/{id}/freeze` einfrieren, Worker gegen ihn laufen lassen, generiertes Pine-Ergebnis + Backtest-Ausgang prüfen (kompiliert? cascade-exit-frei? inhaltlich korrekt vs. Claude-Terminaltest?). Danach BUG-1 fixen und regulären `/abc-qa`-Durchlauf wiederholen, bevor Status auf Approved geht.
