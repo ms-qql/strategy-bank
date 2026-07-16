@@ -176,23 +176,29 @@ def _exec_row_from_run(run: dict) -> dict:
 
 
 def _find_or_create_execution(cur, run: dict, identity_key: str) -> dict:
+    strategy = _load_strategy_details(cur, run["strategy_version_id"])
+    if strategy.get("_pine_error"):
+        raise PineGenerationError(strategy["_pine_error"])
+
+    pine_source = strategy.get("pine_source", "// Pine source TBD")
     cur.execute(
         "SELECT * FROM backtest_executions WHERE idempotency_key = %s",
         [identity_key],
     )
     existing = cur.fetchone()
     if existing:
+        if not existing.get("external_job_id"):
+            cur.execute(
+                "UPDATE backtest_executions SET pine_source = %s, provider_status = 'pending' WHERE id = %s",
+                [pine_source, existing["id"]],
+            )
+            existing["pine_source"] = pine_source
+            existing["provider_status"] = "pending"
         cur.execute(
             "UPDATE runs SET backtest_execution_id = %s WHERE id = %s",
             [existing["id"], run["id"]],
         )
         return existing
-
-    strategy = _load_strategy_details(cur, run["strategy_version_id"])
-    if strategy.get("_pine_error"):
-        raise PineGenerationError(strategy["_pine_error"])
-
-    pine_source = strategy.get("pine_source", "// Pine source TBD")
 
     cur.execute(
         """

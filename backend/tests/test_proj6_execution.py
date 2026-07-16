@@ -355,6 +355,17 @@ class TestRunBacktestExecution:
 
         submit.assert_called_once_with(cur, run["id"], execution)
 
+    def test_worker_regenerates_pine_for_failed_execution(self):
+        from app.services import worker
+
+        cur = MagicMock()
+        cur.fetchone.return_value = {"id": uuid4(), "external_job_id": None, "provider_status": "failed"}
+        run = {"id": uuid4(), "strategy_version_id": uuid4(), "provider_symbol": "BTC", "direction_mode": "kombiniert", "run_kind": "standard"}
+        with patch.object(worker, "_load_strategy_details", return_value={"pine_source": "new pine"}):
+            worker._find_or_create_execution(cur, run, "test-key")
+
+        assert cur.execute.call_args_list[1].args[1] == ["new pine", cur.fetchone.return_value["id"]]
+
     def test_worker_submits_with_direct_mcp(self):
         from app.services import worker
 
