@@ -14,8 +14,8 @@
 | PROJ-8 | Audit-Trail | Deployed | P0 | PROJ-3, PROJ-4, PROJ-5 |
 | PROJ-9 | Markdown-Export | Deployed | P1 | PROJ-8 |
 | PROJ-10 | Positions-, Exit- und Crypto-MTS-Kompatibilitätsmodell | Deployed | P0 | PROJ-2, PROJ-3 |
-| PROJ-11 | Sidebar-Navigation | Approved | P0 | PROJ-1, PROJ-4, PROJ-7 |
-| PROJ-12 | Automatische Backtest-Ausführung aus der App | Approved | P0 | PROJ-5, PROJ-6, PROJ-8 |
+| PROJ-11 | Sidebar-Navigation | Deployed | P0 | PROJ-1, PROJ-4, PROJ-7 |
+| PROJ-12 | Automatische Backtest-Ausführung aus der App | Deployed | P0 | PROJ-5, PROJ-6, PROJ-8 |
 
 **Empfohlene nächste Umsetzung:** PROJ-11 → PROJ-12 → PROJ-7. PROJ-9 folgt als P1.
 
