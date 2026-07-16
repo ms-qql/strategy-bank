@@ -127,6 +127,24 @@ def retry_run(run_id: UUID) -> dict:
     return {"run_id": new_id}
 
 
+@router.delete("/{run_id}", status_code=204)
+def delete_run(run_id: UUID) -> None:
+    row = run_query_one("SELECT status, backtest_execution_id FROM runs WHERE id = %s", [run_id])
+    if not row:
+        raise HTTPException(404, "Run nicht gefunden.")
+    if row["status"] not in TERMINAL_STATUSES:
+        raise HTTPException(422, "Nur abgeschlossene Runs können gelöscht werden.")
+
+    with transaction() as cur:
+        cur.execute("DELETE FROM run_audits WHERE run_id = %s", [run_id])
+        cur.execute("DELETE FROM runs WHERE id = %s", [run_id])
+        if row["backtest_execution_id"]:
+            cur.execute(
+                "DELETE FROM backtest_executions WHERE id = %s AND NOT EXISTS (SELECT 1 FROM runs WHERE backtest_execution_id = %s)",
+                [row["backtest_execution_id"], row["backtest_execution_id"]],
+            )
+
+
 def _build_run_summary(batch_id: UUID) -> dict:
     rows = run_query("SELECT status, COUNT(*) AS cnt FROM runs WHERE batch_id = %s GROUP BY status", [batch_id])
     summary = {"total": 0, "erfolgreich": 0, "fehlgeschlagen": 0, "offen": 0, "abgebrochen": 0}

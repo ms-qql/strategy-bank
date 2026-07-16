@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import { apiGet, apiPost, apiPostJson, ApiError } from "@/lib/api-client";
+import { apiDelete, apiGet, apiPost, apiPostJson, ApiError } from "@/lib/api-client";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,7 @@ import {
   Loader,
   Play,
   RotateCcw,
+  Trash2,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -216,6 +217,20 @@ export default function BatchAusfuehrung({
     }
   };
 
+  const handleDelete = async (runId: string) => {
+    if (!window.confirm("Diesen abgeschlossenen Run inklusive Audit und Ergebnis löschen?")) return;
+    setActionLoading(runId);
+    setError(null);
+    try {
+      await apiDelete(`/runs/${runId}`);
+      await fetchRuns();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Run konnte nicht gelöscht werden.");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   if (!started) {
     return (
       <Card className="mb-6 border-2 border-border">
@@ -355,6 +370,7 @@ export default function BatchAusfuehrung({
                   actionLoading={actionLoading}
                   onCancel={handleCancel}
                   onRetry={handleRetry}
+                  onDelete={handleDelete}
                 />
               ))}
             </TableBody>
@@ -378,12 +394,14 @@ function RunZeile({
   actionLoading,
   onCancel,
   onRetry,
+  onDelete,
 }: {
   run: RunRead;
   versions: VersionSummary[];
   actionLoading: string | null;
   onCancel: (runId: string) => void;
   onRetry: (runId: string) => void;
+  onDelete: (runId: string) => void;
 }) {
   const router = useRouter();
   const versionName =
@@ -488,6 +506,17 @@ function RunZeile({
             )}
             <RotateCcw className="mr-1 h-3 w-3" />
             Wiederholen
+          </Button>
+        )}
+        {isCompleted && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onDelete(run.id)}
+            disabled={actionLoading === run.id}
+            className="ml-1"
+          >
+            <Trash2 className="h-3 w-3" />
           </Button>
         )}
         {isCompleted && (

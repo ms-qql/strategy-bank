@@ -52,7 +52,7 @@ export const batchSchema = z.object({
   period_start: z.string(),
   period_end: z.string().nullable(),
   run_kind: z.enum(["standard", "holdout", "forward_test"]),
-  status: z.enum(["entwurf", "bestätigt"]),
+  status: z.enum(["entwurf", "bestätigt", "in_ausfuehrung"]),
   confirmed_at: z.string().nullable(),
   created_at: z.string(),
   strategy_version_ids: z.array(z.string()),

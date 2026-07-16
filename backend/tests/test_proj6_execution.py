@@ -127,6 +127,11 @@ class TestBatchStart:
 
 
 class TestGetBatchRuns:
+    def test_lists_existing_batches(self, client):
+        batch = _make_confirmed_batch(client)
+
+        assert batch["id"] in {item["id"] for item in client.get("/batches").json()}
+
     def test_returns_runs_with_summary(self, client):
         batch = _make_confirmed_batch(client)
         client.post(f"/batches/{batch['id']}/start")
@@ -178,6 +183,21 @@ class TestGetSingleRun:
     def test_unknown_run_404(self, client):
         resp = client.get(f"/runs/{uuid4()}")
         assert resp.status_code == 404
+
+    def test_delete_terminal_run_removes_audit(self, client):
+        batch = _make_confirmed_batch(client)
+        run = client.get(f"/batches/{batch['id']}/runs").json()["runs"][0]
+        from app.db import run_command, run_query_one
+        run_command("UPDATE runs SET status = 'fehlgeschlagen' WHERE id = %s", [run["id"]])
+
+        assert client.delete(f"/runs/{run['id']}").status_code == 204
+        assert run_query_one("SELECT id FROM run_audits WHERE run_id = %s", [run["id"]]) is None
+
+    def test_delete_pending_run_rejected(self, client):
+        batch = _make_confirmed_batch(client)
+        run = client.get(f"/batches/{batch['id']}/runs").json()["runs"][0]
+
+        assert client.delete(f"/runs/{run['id']}").status_code == 422
 
 
 class TestCancelRun:

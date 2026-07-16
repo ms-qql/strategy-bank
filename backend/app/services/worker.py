@@ -105,7 +105,7 @@ def _process_pending() -> None:
             cur.execute(
                 """
                 SELECT * FROM runs
-                WHERE status = 'bestätigt'
+                WHERE status IN ('bestätigt', 'in_queue')
                 ORDER BY created_at ASC
                 LIMIT %s
                 FOR UPDATE SKIP LOCKED

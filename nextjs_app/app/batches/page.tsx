@@ -131,6 +131,7 @@ function BatchesPageInner() {
 
   const [profiles, setProfiles] = useState<BacktestProfile[]>([]);
   const [versions, setVersions] = useState<VersionSummary[]>([]);
+  const [existingBatches, setExistingBatches] = useState<Batch[]>([]);
 
   const [profileMode, setProfileMode] = useState<"existing" | "new">("new");
   const [selectedProfileId, setSelectedProfileId] = useState("");
@@ -178,6 +179,7 @@ function BatchesPageInner() {
       }
       const v = z.array(versionSummarySchema).parse(await apiGet<VersionSummary[]>("/versions"));
       setVersions(v);
+      setExistingBatches(z.array(batchSchema).parse(await apiGet<Batch[]>("/batches")));
 
       if (loadBatchId) {
         const loaded = batchSchema.parse(await apiGet<Batch>(`/batches/${loadBatchId}`));
@@ -209,7 +211,7 @@ function BatchesPageInner() {
     loadInitial();
   }, [loadInitial]);
 
-  const isConfirmed = batch?.status === "bestätigt";
+  const isConfirmed = batch?.status !== "entwurf";
   const isStandardBatch = !batch || batch.run_kind === "standard";
 
   const toggleVersion = (id: string) => {
@@ -374,6 +376,27 @@ function BatchesPageInner() {
           <Check aria-hidden="true" />
           <AlertDescription>{success}</AlertDescription>
         </Alert>
+      )}
+
+      {!loadBatchId && existingBatches.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Vorhandene Batches</CardTitle>
+            <CardDescription>Ausführung eines bestehenden Batches wieder öffnen.</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {existingBatches.map((existing) => (
+              <div key={existing.id} className="flex flex-wrap items-center gap-3 rounded-md border border-border p-3 text-sm">
+                <Badge variant={existing.status === "entwurf" ? "secondary" : "default"}>{existing.status}</Badge>
+                <span>{existing.run_kind}</span>
+                <span className="text-muted-foreground">{new Date(existing.created_at).toLocaleString("de-DE")}</span>
+                <Button className="ml-auto" variant="outline" size="sm" onClick={() => router.push(`/batches?batch=${existing.id}`)}>
+                  Ausführung öffnen
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       )}
 
       {/* Backtest-Profil */}

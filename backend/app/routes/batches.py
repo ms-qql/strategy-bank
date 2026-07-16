@@ -109,6 +109,13 @@ def _insert_profile_version(family_id: UUID, version_number: int, body: Backtest
 
 # --- Batches -----------------------------------------------------------
 
+@router.get("/batches", response_model=list[BatchRead])
+def list_batches() -> list[dict]:
+    return [
+        _load_batch(row["id"])
+        for row in run_query("SELECT id FROM batches ORDER BY created_at DESC LIMIT 50")
+    ]
+
 def _validate_strategy_versions(strategy_version_ids: list[UUID]) -> None:
     rows = run_query(
         "SELECT id FROM strategy_versions WHERE id = ANY(%s)",

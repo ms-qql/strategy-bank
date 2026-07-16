@@ -64,6 +64,19 @@ def _make_confirmed_batch(client):
 
 
 class TestExecutionAvailability:
+    def test_worker_recovers_in_queue_runs(self, client):
+        from app.db import run_command, run_query_one
+        from app.services import worker
+
+        batch = _make_confirmed_batch(client)
+        run = run_query_one("SELECT id FROM runs WHERE batch_id = %s LIMIT 1", [batch["id"]])
+        run_command("UPDATE runs SET status = 'in_queue' WHERE id = %s", [run["id"]])
+
+        with patch.object(worker, "_process_one_run") as process:
+            worker._process_pending()
+
+        assert process.call_args.args[1]["id"] == run["id"]
+
     def test_worker_available_with_recent_heartbeat(self, client):
         resp = client.get("/execution/availability")
         assert resp.status_code == 200, resp.text
