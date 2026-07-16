@@ -192,11 +192,11 @@ class TestGetSingleRun:
         assert client.delete(f"/runs/{run['id']}").status_code == 204
         assert run_query_one("SELECT id FROM run_audits WHERE run_id = %s", [run["id"]]) is None
 
-    def test_delete_pending_run_rejected(self, client):
+    def test_delete_pending_run(self, client):
         batch = _make_confirmed_batch(client)
         run = client.get(f"/batches/{batch['id']}/runs").json()["runs"][0]
 
-        assert client.delete(f"/runs/{run['id']}").status_code == 422
+        assert client.delete(f"/runs/{run['id']}").status_code == 204
 
 
 class TestCancelRun:
@@ -344,6 +344,17 @@ class TestRetry:
 
 
 class TestRunBacktestExecution:
+    def test_worker_resubmits_execution_without_job_id(self):
+        from app.services import worker
+
+        cur = MagicMock()
+        run = {"id": uuid4(), "strategy_version_id": uuid4(), "provider_symbol": "BTC", "direction_mode": "kombiniert", "run_kind": "standard"}
+        execution = {"id": uuid4(), "provider_status": "submitted", "external_job_id": None}
+        with patch.object(worker, "_find_or_create_execution", return_value=execution), patch.object(worker, "_submit_backtest") as submit:
+            worker._process_one_run(cur, run)
+
+        submit.assert_called_once_with(cur, run["id"], execution)
+
     def test_worker_submits_with_direct_mcp(self):
         from app.services import worker
 

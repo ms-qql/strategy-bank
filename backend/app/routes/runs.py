@@ -132,8 +132,8 @@ def delete_run(run_id: UUID) -> None:
     row = run_query_one("SELECT status, backtest_execution_id FROM runs WHERE id = %s", [run_id])
     if not row:
         raise HTTPException(404, "Run nicht gefunden.")
-    if row["status"] not in TERMINAL_STATUSES:
-        raise HTTPException(422, "Nur abgeschlossene Runs können gelöscht werden.")
+    if row["status"] == "läuft":
+        raise HTTPException(422, "Laufende Runs können nicht gelöscht werden.")
 
     with transaction() as cur:
         cur.execute("DELETE FROM run_audits WHERE run_id = %s", [run_id])

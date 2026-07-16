@@ -508,7 +508,7 @@ function RunZeile({
             Wiederholen
           </Button>
         )}
-        {isCompleted && (
+        {run.status !== "läuft" && (
           <Button
             variant="ghost"
             size="sm"

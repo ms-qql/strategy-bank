@@ -151,7 +151,7 @@ def _process_one_run(cur, run: dict) -> None:
         _store_result(cur, run_id, exec_row)
         return
 
-    if exec_row["provider_status"] in ("submitted", "running"):
+    if exec_row["provider_status"] in ("submitted", "running") and exec_row.get("external_job_id"):
         _check_existing_job(cur, run_id, exec_row)
         return
 
