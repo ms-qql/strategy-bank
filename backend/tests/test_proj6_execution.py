@@ -198,6 +198,31 @@ class TestGetSingleRun:
 
         assert client.delete(f"/runs/{run['id']}").status_code == 204
 
+    def test_delete_last_run_resets_batch_to_entwurf(self, client):
+        # Regression: DELETE /runs/{id} used to never touch the parent batch,
+        # so deleting a batch's only/last run left it stuck at 'bestätigt'
+        # forever (config permanently locked, no way to start a new run).
+        batch = _make_confirmed_batch(client)
+        run = client.get(f"/batches/{batch['id']}/runs").json()["runs"][0]
+
+        assert client.delete(f"/runs/{run['id']}").status_code == 204
+
+        reloaded = client.get(f"/batches/{batch['id']}").json()
+        assert reloaded["status"] == "entwurf"
+        assert reloaded["confirmed_at"] is None
+        assert reloaded["credit_max"] is None
+
+    def test_delete_one_of_several_runs_keeps_batch_confirmed(self, client):
+        batch = _make_confirmed_batch(client, extra_versions=1)
+        runs = client.get(f"/batches/{batch['id']}/runs").json()["runs"]
+        assert len(runs) == 2
+
+        assert client.delete(f"/runs/{runs[0]['id']}").status_code == 204
+
+        reloaded = client.get(f"/batches/{batch['id']}").json()
+        assert reloaded["status"] == "bestätigt"
+        assert reloaded["confirmed_at"] is not None
+
 
 class TestCancelRun:
     def test_cancel_geplant_run(self, client):
