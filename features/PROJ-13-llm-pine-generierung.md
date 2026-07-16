@@ -205,3 +205,9 @@ Hinweis: Dieses Projekt hat kein JWT/Mandanten-Modell (Single-Tenant-Tool, per P
 **Nächster Schritt nach diesem Deploy:** einen Draft sauber über `/drafts/{id}/freeze` einfrieren, Worker gegen ihn laufen lassen, generiertes Pine-Ergebnis + Backtest-Ausgang prüfen (kompiliert? cascade-exit-frei? inhaltlich korrekt vs. Claude-Terminaltest?). Danach BUG-1 fixen und regulären `/abc-qa`-Durchlauf wiederholen, bevor Status auf Approved geht.
 
 **Test-Deploy ausgelöst:** 2026-07-16, Version v0.2.22 (Bump v0.2.21 → v0.2.22), Push nach `origin/main` (Auto-Deploy auf Dokploy, `docker-compose.dokploy.yml`). Kein Git-Tag gesetzt — Tagging erfolgt laut Repo-Konvention erst beim tatsächlichen „Deployed"-Bookkeeping nach Approval.
+
+## Backoffice-Fix 2026-07-16 — internes Positionsmodus-Enum im Pine-Code
+
+Ein Produktionslauf scheiterte bei trader.dev mit `Cannot read properties of undefined (reading 'signal_reversal')`. Ursache war, dass `build_prompt()` die internen Werte `signal_reversal`/`entry_exit` als scheinbare Fachsyntax an das kleinere Produktionsmodell gab und `_extract_pine()` ungültige `strategy.<enum>`-Zugriffe nicht abwies. Der Prompt beschreibt das Verhalten nun ohne interne Bezeichner; die Ausgabeprüfung verlangt den Versions-Header am Anfang und verwirft solche ungültigen Pine-API-Zugriffe vor dem externen Backtest.
+
+Verifikation: neuer Reproduktionsfall vor dem Fix 2-fach rot, danach `tests/test_pine_generator.py` 11/11 grün. Gesamtsuite: 203 grün, nur der bereits dokumentierte, unabhängige Fehler `test_multiple_result_types_are_separate_rows` bleibt rot. Status bleibt bis zur Produktions-E2E-Verifikation **In Review**; `features/INDEX.md` ist daher unverändert korrekt.
