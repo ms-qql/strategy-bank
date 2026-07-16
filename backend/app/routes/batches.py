@@ -1,5 +1,5 @@
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -584,6 +584,13 @@ def _build_run_summary(batch_id: UUID) -> dict:
     return summary
 
 
+def _worker_available() -> bool:
+    row = run_query_one("SELECT last_heartbeat FROM worker_heartbeat")
+    if not row:
+        return False
+    return row["last_heartbeat"] > datetime.now(timezone.utc) - timedelta(seconds=120)
+
+
 @router.post("/batches/{batch_id}/start", response_model=dict)
 def start_batch(batch_id: UUID) -> dict:
     batch = run_query_one("SELECT * FROM batches WHERE id = %s", [batch_id])
@@ -591,6 +598,13 @@ def start_batch(batch_id: UUID) -> dict:
         raise HTTPException(404, "Batch nicht gefunden.")
     if batch["status"] != "bestätigt":
         raise HTTPException(422, "Nur bestätigte Batches können gestartet werden.")
+
+    if not _worker_available():
+        raise HTTPException(
+            503,
+            "Die automatische Verarbeitung ist derzeit nicht verfügbar. "
+            "Bitte versuchen Sie es in einigen Minuten erneut.",
+        )
 
     with transaction() as cur:
         cur.execute(

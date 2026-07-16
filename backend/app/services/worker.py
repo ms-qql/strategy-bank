@@ -1,14 +1,16 @@
-"""PROJ-6 Worker — verarbeitet bestätigte Runs aus der PostgreSQL-Queue.
+"""PROJ-12 Worker — Dauerhaft laufender Dienst, verarbeitet bestätigte Runs
+aus der PostgreSQL-Queue.
 
 Aufgabe:
-  1. Offene bestätigte Runs abfragen (SELECT ... WHERE status = 'bestätigt' FOR UPDATE SKIP LOCKED)
-  2. Idempotency-Key aus Run-Parametern bauen
-  3. Existierende backtest_execution finden oder neue anlegen
-  4. Pine-v5-Übersetzung aus strategy_versions.snapshot generieren (TBD)
-  5. run_backtest via OpenCode/trader.dev MCP starten
-  6. get_backtest_result pollen (asynchron, mit Stale-Timeouts)
-  7. Cascade-Exit-Korrektur (maximal 1x)
-  8. Ergebnis in backtest_executions speichern, Run-Status aktualisieren
+  1. Heartbeat schreiben (PostgreSQL, alle ~30s)
+  2. Offene bestätigte Runs abfragen (SELECT ... WHERE status = 'bestätigt' FOR UPDATE SKIP LOCKED)
+  3. Bestehende, noch nicht terminale Backtests wieder aufnehmen
+  4. Idempotency-Key aus Run-Parametern bauen
+  5. Existierende backtest_execution finden oder neue anlegen
+  6. Pine-v5-Übersetzung aus strategy_versions.snapshot generieren
+  7. run_backtest via OpenCode/trader.dev MCP starten
+  8. get_backtest_result pollen
+  9. Ergebnis in backtest_executions speichern, Run-Status aktualisieren
 
 Der Worker läuft als separater Prozess (nicht im FastAPI-Server). Kein
 HTTP-Timeout-Problem bei minutenlangen Backtests.
@@ -31,43 +33,109 @@ from .pine_generator import PineGenerationError, generate as generate_pine
 logger = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 30
+HEARTBEAT_INTERVAL_SECONDS = 30
 MCP_TIMEOUT_SECONDS = 60
+RUN_LIMIT = 5
+
+WORKER_ID = "strategy-bank-worker-v1"
 
 
-def process_pending_runs() -> int:
-    """Hauptschleife: einen Schwung Runs abarbeiten, dann beenden.
-    Für den Dauerbetrieb per cron/systemd-Timer aufrufen."""
-    with psycopg.connect(settings.database_url, row_factory=dict_row) as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            SELECT * FROM runs
-            WHERE status = 'bestätigt'
-            ORDER BY created_at ASC
-            LIMIT 5
-            FOR UPDATE SKIP LOCKED
-            """
-        )
-        pending = cur.fetchall()
-        if not pending:
-            return 0
+def run_worker() -> None:
+    """Blockierender Hauptloop — läuft bis zum Prozessende."""
+    logger.info("Worker gestartet — %s", WORKER_ID)
+    last_heartbeat = _epoch()
+    while True:
+        now = _epoch()
+        if (now - last_heartbeat).total_seconds() >= HEARTBEAT_INTERVAL_SECONDS:
+            _heartbeat()
+            last_heartbeat = now
+        _recover_in_flight()
+        _process_pending()
+        time.sleep(POLL_INTERVAL_SECONDS)
 
-        for run in pending:
-            try:
-                _process_one_run(cur, run)
-            except PineGenerationError as e:
-                logger.warning("Run %s Pine-Übersetzung fehlgeschlagen: %s", run["id"], e)
-                cur.execute(
-                    "UPDATE runs SET status = 'fehlgeschlagen', error_message = %s, completed_at = %s WHERE id = %s",
-                    [f"Regel nicht automatisch zuverlässig in Pine übersetzbar: {e}", datetime.now(timezone.utc), run["id"]],
-                )
-            except Exception:
-                logger.exception("Run %s fehlgeschlagen", run["id"])
-                cur.execute(
-                    "UPDATE runs SET status = 'fehlgeschlagen', error_message = %s, completed_at = %s WHERE id = %s",
-                    ["Interner Worker-Fehler.", datetime.now(timezone.utc), run["id"]],
-                )
-        conn.commit()
-        return len(pending)
+
+def _epoch() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _heartbeat() -> None:
+    try:
+        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE worker_heartbeat SET last_heartbeat = %s WHERE worker_id = %s",
+                [_epoch(), WORKER_ID],
+            )
+            conn.commit()
+    except Exception:
+        logger.exception("Heartbeat-Schreiben fehlgeschlagen")
+
+
+def _recover_in_flight() -> None:
+    """Startet in-flight Runs wieder auf, deren provider_status noch
+    submitted/running ist — z. B. nach Worker-Neustart."""
+    try:
+        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT r.*, be.id AS exec_id, be.external_job_id, be.provider_status
+                FROM runs r
+                JOIN backtest_executions be ON be.id = r.backtest_execution_id
+                WHERE r.status = 'läuft' AND be.provider_status IN ('submitted', 'running')
+                ORDER BY r.created_at ASC
+                LIMIT %s
+                FOR UPDATE SKIP LOCKED
+                """,
+                [RUN_LIMIT],
+            )
+            in_flight = cur.fetchall()
+            for run in in_flight:
+                exec_row = _exec_row_from_run(run)
+                try:
+                    _check_existing_job(cur, run["id"], exec_row)
+                except Exception:
+                    logger.exception("Run %s Wiederaufnahme fehlgeschlagen", run["id"])
+            conn.commit()
+    except Exception:
+        logger.exception("Recovery-Loop Fehler")
+
+
+def _process_pending() -> None:
+    try:
+        with psycopg.connect(settings.database_url, row_factory=dict_row) as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT * FROM runs
+                WHERE status = 'bestätigt'
+                ORDER BY created_at ASC
+                LIMIT %s
+                FOR UPDATE SKIP LOCKED
+                """,
+                [RUN_LIMIT],
+            )
+            pending = cur.fetchall()
+            for run in pending:
+                try:
+                    _process_one_run(cur, run)
+                except PineGenerationError as e:
+                    logger.warning("Run %s Pine-Übersetzung fehlgeschlagen: %s", run["id"], e)
+                    cur.execute(
+                        "UPDATE runs SET status = 'fehlgeschlagen', error_message = %s, error_category = %s, completed_at = %s WHERE id = %s",
+                        [
+                            f"Regel nicht automatisch zuverlässig in Pine übersetzbar: {e}",
+                            "pine_generation",
+                            _epoch(),
+                            run["id"],
+                        ],
+                    )
+                except Exception:
+                    logger.exception("Run %s fehlgeschlagen", run["id"])
+                    cur.execute(
+                        "UPDATE runs SET status = 'fehlgeschlagen', error_message = %s, error_category = %s, completed_at = %s WHERE id = %s",
+                        ["Interner Worker-Fehler.", "worker_internal", _epoch(), run["id"]],
+                    )
+            conn.commit()
+    except Exception:
+        logger.exception("Process-Loop Fehler")
 
 
 def _process_one_run(cur, run: dict) -> None:
@@ -75,7 +143,7 @@ def _process_one_run(cur, run: dict) -> None:
 
     cur.execute(
         "UPDATE runs SET status = 'in_queue', started_at = %s WHERE id = %s",
-        [datetime.now(timezone.utc), run_id],
+        [_epoch(), run_id],
     )
 
     identity_key = _build_idempotency_key(run)
@@ -101,6 +169,14 @@ def _build_idempotency_key(run: dict) -> str:
     ])
 
 
+def _exec_row_from_run(run: dict) -> dict:
+    return {
+        "id": run.get("exec_id") or run.get("backtest_execution_id"),
+        "external_job_id": run.get("external_job_id"),
+        "provider_status": run.get("provider_status", "pending"),
+    }
+
+
 def _find_or_create_execution(cur, run: dict, identity_key: str) -> dict:
     cur.execute(
         "SELECT * FROM backtest_executions WHERE idempotency_key = %s",
@@ -119,7 +195,6 @@ def _find_or_create_execution(cur, run: dict, identity_key: str) -> dict:
         raise PineGenerationError(strategy["_pine_error"])
 
     pine_source = strategy.get("pine_source", "// Pine source TBD")
-    profile = _load_profile_details(cur, run)
 
     cur.execute(
         """
@@ -137,7 +212,7 @@ def _find_or_create_execution(cur, run: dict, identity_key: str) -> dict:
             strategy.get("profile_id", run.get("batch_id", "")),
             run.get("run_kind", "standard"),
             pine_source,
-            _executor_fingerprint(),
+            WORKER_ID,
         ],
     )
     new_exec = cur.fetchone()
@@ -149,12 +224,10 @@ def _find_or_create_execution(cur, run: dict, identity_key: str) -> dict:
 
 
 def _submit_backtest(cur, run_id: UUID, exec_row: dict) -> None:
-    cur.execute(
-        "UPDATE runs SET status = 'läuft' WHERE id = %s", [run_id],
-    )
+    cur.execute("UPDATE runs SET status = 'läuft' WHERE id = %s", [run_id])
     cur.execute(
         "UPDATE backtest_executions SET provider_status = 'submitted', started_at = %s WHERE id = %s",
-        [datetime.now(timezone.utc), exec_row["id"]],
+        [_epoch(), exec_row["id"]],
     )
 
     prompt = _build_run_prompt(exec_row)
@@ -167,16 +240,16 @@ def _submit_backtest(cur, run_id: UUID, exec_row: dict) -> None:
             capture_output=True, text=True, timeout=MCP_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
-        _mark_failed(cur, run_id, exec_row, "trader.dev-Aufruf: Timeout (60s).")
+        _mark_failed(cur, run_id, exec_row, "trader.dev-Aufruf: Timeout (60s).", "trader_dev_timeout")
         return
 
     if result.returncode != 0:
-        _mark_failed(cur, run_id, exec_row, f"OpenCode Exit {result.returncode}.")
+        _mark_failed(cur, run_id, exec_row, f"OpenCode Exit {result.returncode}.", "opencode_error")
         return
 
     output = _parse_json_output(result.stdout)
     if output.get("error"):
-        _mark_failed(cur, run_id, exec_row, output["error"])
+        _mark_failed(cur, run_id, exec_row, output["error"], "backtest_error")
         return
 
     job_id = output.get("jobId") or output.get("job_id")
@@ -190,9 +263,7 @@ def _submit_backtest(cur, run_id: UUID, exec_row: dict) -> None:
 def _check_existing_job(cur, run_id: UUID, exec_row: dict) -> None:
     if not exec_row.get("external_job_id"):
         return
-    cur.execute(
-        "UPDATE runs SET status = 'läuft' WHERE id = %s", [run_id],
-    )
+    cur.execute("UPDATE runs SET status = 'läuft' WHERE id = %s", [run_id])
     prompt = (
         f"Call the trader_dev_get_backtest_result tool with jobId={exec_row['external_job_id']}. "
         "Output ONLY the raw JSON result inside a ```json code block. No commentary."
@@ -215,30 +286,37 @@ def _check_existing_job(cur, run_id: UUID, exec_row: dict) -> None:
     if output.get("status") == "completed" and output.get("result"):
         cur.execute(
             "UPDATE backtest_executions SET backtest_result = %s, provider_status = 'completed', completed_at = %s WHERE id = %s",
-            [json.dumps(output["result"]), datetime.now(timezone.utc), exec_row["id"]],
+            [json.dumps(output["result"]), _epoch(), exec_row["id"]],
         )
         cur.execute(
             "UPDATE runs SET status = 'erfolgreich', completed_at = %s WHERE id = %s",
-            [datetime.now(timezone.utc), run_id],
+            [_epoch(), run_id],
         )
 
 
 def _store_result(cur, run_id: UUID, exec_row: dict) -> None:
     cur.execute(
         "UPDATE runs SET status = 'erfolgreich', completed_at = %s WHERE id = %s",
-        [datetime.now(timezone.utc), run_id],
+        [_epoch(), run_id],
     )
 
 
-def _mark_failed(cur, run_id: UUID, exec_row: dict, message: str) -> None:
+def _mark_failed(cur, run_id: UUID, exec_row: dict, message: str, category: str) -> None:
     cur.execute(
-        "UPDATE runs SET status = 'fehlgeschlagen', error_message = %s, completed_at = %s WHERE id = %s",
-        [message, datetime.now(timezone.utc), run_id],
+        "UPDATE runs SET status = 'fehlgeschlagen', error_message = %s, error_category = %s, completed_at = %s WHERE id = %s",
+        [message, category, _epoch(), run_id],
     )
     cur.execute(
         "UPDATE backtest_executions SET provider_status = 'failed', completed_at = %s WHERE id = %s",
-        [datetime.now(timezone.utc), exec_row["id"]],
+        [_epoch(), exec_row["id"]],
     )
+    try:
+        cur.execute(
+            "UPDATE worker_heartbeat SET last_error_category = %s, last_error_at = %s WHERE worker_id = %s",
+            [category, _epoch(), WORKER_ID],
+        )
+    except Exception:
+        pass
 
 
 def _build_run_prompt(exec_row: dict) -> str:
@@ -284,10 +362,6 @@ def _parse_json_output(stdout: str) -> dict[str, Any]:
         return {}
 
 
-def _executor_fingerprint() -> str:
-    return "strategy-bank-worker-v1"
-
-
 def _load_strategy_details(cur, version_id: UUID) -> dict:
     cur.execute(
         """SELECT sv.*, b.timeframe, b.period_start, b.period_end, b.backtest_profile_id
@@ -318,10 +392,3 @@ def _load_strategy_details(cur, version_id: UUID) -> dict:
         row["_pine_error"] = str(e)
 
     return row
-
-
-def _load_profile_details(cur, run: dict) -> dict:
-    cur.execute(
-        "SELECT * FROM batches WHERE id = %s", [run["batch_id"]],
-    )
-    return cur.fetchone() or {}

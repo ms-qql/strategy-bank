@@ -25,7 +25,13 @@ def _clean_db():
         "draft_parameters, draft_source_citations, draft_open_questions, "
         "strategy_versions, version_parameters, "
         "backtest_profiles, batches, batch_instruments, batch_strategy_versions, "
-        "batch_direction_modes, runs, run_audits, backtest_executions, family_holdout_status CASCADE"
+        "batch_direction_modes, runs, run_audits, backtest_executions, "
+        "family_holdout_status, worker_heartbeat CASCADE"
+    )
+    run_command(
+        "INSERT INTO worker_heartbeat (worker_id, last_heartbeat) "
+        "VALUES ('strategy-bank-worker-v1', now()) "
+        "ON CONFLICT (worker_id) DO UPDATE SET last_heartbeat = now()"
     )
     yield
 
