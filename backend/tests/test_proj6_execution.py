@@ -82,7 +82,7 @@ def _make_confirmed_batch(client, extra_versions=0):
     batch = resp.json()
     with patch("app.routes.batches.get_credits") as mock:
         mock.return_value = {"balance": 1000, "tier": "free", "reset": "2026-07-22", "weekly_free": 1000}
-        expected_runs = len(versions) * 3  # 3 default instruments × 1 default direction
+        expected_runs = len(versions)
         resp = client.post(f"/batches/{batch['id']}/confirm", json={"credit_max": expected_runs})
     assert resp.status_code == 201, resp.text
     return resp.json()
@@ -106,7 +106,7 @@ class TestBatchStart:
 
         from app.db import run_query
         runs = run_query("SELECT status FROM runs WHERE batch_id = %s", [batch["id"]])
-        assert len(runs) == 3
+        assert len(runs) == 1
         assert all(r["status"] == "bestätigt" for r in runs)
 
     def test_start_non_confirmed_batch_rejected(self, client):
@@ -140,9 +140,9 @@ class TestGetBatchRuns:
         assert data["batch_status"] == "in_ausfuehrung"
         assert "runs" in data
         assert "summary" in data
-        assert len(data["runs"]) == 3
-        assert data["summary"]["total"] == 3
-        assert data["summary"]["offen"] == 3
+        assert len(data["runs"]) == 1
+        assert data["summary"]["total"] == 1
+        assert data["summary"]["offen"] == 1
         assert data["summary"]["erfolgreich"] == 0
         assert data["summary"]["fehlgeschlagen"] == 0
         assert data["summary"]["abgebrochen"] == 0
@@ -298,9 +298,9 @@ class TestRetry:
         assert new_run["run_id"] != run["id"]
 
         all_runs = client.get(f"/batches/{batch['id']}/runs").json()
-        assert all_runs["summary"]["total"] == 4  # 3 original + 1 retry
+        assert all_runs["summary"]["total"] == 2
         assert all_runs["summary"]["fehlgeschlagen"] == 1
-        assert all_runs["summary"]["offen"] == 3  # 2 original geplant + 1 retry
+        assert all_runs["summary"]["offen"] == 1
 
     def test_retry_non_failed_rejected(self, client):
         batch = _make_confirmed_batch(client)
@@ -445,11 +445,10 @@ class TestRunBacktestExecution:
 
 class TestRunSummary:
     def test_mixed_status_summary(self, client):
-        batch = _make_confirmed_batch(client, extra_versions=1)
-        # 2 versions × 3 instruments = 6 runs
+        batch = _make_confirmed_batch(client, extra_versions=3)
         runs_resp = client.get(f"/batches/{batch['id']}/runs")
         runs = runs_resp.json()["runs"]
-        assert len(runs) == 6
+        assert len(runs) == 4
 
         from app.db import run_command
         run_command("UPDATE runs SET status = 'erfolgreich' WHERE id = %s", [runs[0]["id"]])
@@ -458,18 +457,18 @@ class TestRunSummary:
 
         resp = client.get(f"/batches/{batch['id']}/runs")
         summary = resp.json()["summary"]
-        assert summary["total"] == 6
+        assert summary["total"] == 4
         assert summary["erfolgreich"] == 1
         assert summary["fehlgeschlagen"] == 1
         assert summary["abgebrochen"] == 1
-        assert summary["offen"] == 3
+        assert summary["offen"] == 1
 
     def test_all_pending_summary(self, client):
         batch = _make_confirmed_batch(client)
         resp = client.get(f"/batches/{batch['id']}/runs")
         summary = resp.json()["summary"]
-        assert summary["total"] == 3
-        assert summary["offen"] == 3
+        assert summary["total"] == 1
+        assert summary["offen"] == 1
         assert summary["erfolgreich"] == 0
         assert summary["fehlgeschlagen"] == 0
         assert summary["abgebrochen"] == 0

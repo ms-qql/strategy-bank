@@ -16,6 +16,10 @@ def test_parses_direct_mcp_credit_result():
     assert _tool_json({"content": [{"type": "text", "text": '{"balance": 999}'}]}) == {"balance": 999}
 
 
+def test_parses_backtest_job_id_from_text():
+    assert _tool_json({"content": [{"type": "text", "text": "Backtest started. Job ID: job-1"}]}) == {"jobId": "job-1"}
+
+
 def test_starts_backtest_via_direct_mcp():
     with patch("app.services.trader_dev._call_tool", return_value={"jobId": "job-1"}) as call:
         assert start_backtest(pine_source="// pine", symbol="BTC", timeframe="4h", period_start="2021-01-01", period_end="2024-12-31") == {"jobId": "job-1"}

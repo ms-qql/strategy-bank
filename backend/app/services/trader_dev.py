@@ -1,6 +1,7 @@
 """trader.dev MCP-Integration (PROJ-5 Credit-Gate)."""
 
 import json
+import re
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 from typing import Any
@@ -120,9 +121,16 @@ def _tool_json(result: dict[str, Any]) -> dict[str, Any]:
     if result.get("isError"):
         raise ValueError(text or "trader.dev hat die Anfrage abgelehnt.")
     if text:
-        parsed = json.loads(text)
-        if isinstance(parsed, dict):
-            return parsed
+        fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+        try:
+            parsed = json.loads((fenced.group(1) if fenced else text).strip())
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            job = re.search(r"(?:job[ _-]?id|backtest[ _-]?id)\s*[:=]\s*[`\"']?([\w-]+)", text, re.IGNORECASE)
+            if job:
+                return {"jobId": job.group(1)}
+            raise ValueError(text)
     raise ValueError("trader.dev hat keine strukturierte Credit-Antwort geliefert.")
 
 

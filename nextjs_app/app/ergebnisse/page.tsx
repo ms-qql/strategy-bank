@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
-import { apiGet, ApiError } from "@/lib/api-client";
+import { apiDelete, apiGet, ApiError } from "@/lib/api-client";
 import {
   resultRowSchema,
   RESULT_TYPE_LABELS,
@@ -40,6 +40,7 @@ import {
   TriangleAlert,
   SearchX,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -127,6 +128,7 @@ export default function ErgebnissePage() {
   const [rows, setRows] = useState<ResultRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterStrategy, setFilterStrategy] = useState("");
@@ -237,6 +239,19 @@ export default function ErgebnissePage() {
     setFilterDirection("");
     setFilterStatus("");
     setFilterResultType("");
+  };
+
+  const handleDelete = async (runId: string) => {
+    if (!window.confirm("Diesen Run endgültig löschen?")) return;
+    setDeletingRunId(runId);
+    try {
+      await apiDelete(`/runs/${runId}`);
+      setRows((prev) => prev.filter((row) => row.run_id !== runId));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Run konnte nicht gelöscht werden.");
+    } finally {
+      setDeletingRunId(null);
+    }
   };
 
   const hasFilters =
@@ -409,6 +424,8 @@ export default function ErgebnissePage() {
           onSort={handleSort}
           threshold={threshold}
           isHighlighted={hasMultipleProfiles}
+          deletingRunId={deletingRunId}
+          onDelete={handleDelete}
         />
       ))}
     </div>
@@ -456,6 +473,8 @@ function ErgebnisGruppe({
   onSort,
   threshold,
   isHighlighted,
+  deletingRunId,
+  onDelete,
 }: {
   rows: ResultRow[];
   groupLabel: string;
@@ -463,6 +482,8 @@ function ErgebnisGruppe({
   onSort: (field: string) => void;
   threshold: number;
   isHighlighted: boolean;
+  deletingRunId: string | null;
+  onDelete: (runId: string) => void;
 }) {
   const activeThreshold = threshold;
 
@@ -530,7 +551,7 @@ function ErgebnisGruppe({
           </TableHeader>
           <TableBody>
             {rows.map((r) => (
-              <ErgebnisZeile key={r.run_id} row={r} threshold={activeThreshold} />
+              <ErgebnisZeile key={r.run_id} row={r} threshold={activeThreshold} deletingRunId={deletingRunId} onDelete={onDelete} />
             ))}
           </TableBody>
         </Table>
@@ -542,9 +563,13 @@ function ErgebnisGruppe({
 function ErgebnisZeile({
   row,
   threshold,
+  deletingRunId,
+  onDelete,
 }: {
   row: ResultRow;
   threshold: number;
+  deletingRunId: string | null;
+  onDelete: (runId: string) => void;
 }) {
   const isLowActivity = row.trade_count !== null && row.trade_count < threshold;
   const hasReport = !!row.report_link;
@@ -629,6 +654,11 @@ function ErgebnisZeile({
             >
               <ExternalLink className="h-3 w-3" />
             </a>
+          )}
+          {row.status !== "läuft" && (
+            <Button variant="ghost" size="sm" onClick={() => onDelete(row.run_id)} disabled={deletingRunId === row.run_id}>
+              {deletingRunId === row.run_id ? <Loader className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+            </Button>
           )}
         </div>
       </TableCell>

@@ -44,8 +44,6 @@ import {
 
 const DEFAULT_INSTRUMENTS: Instrument[] = [
   { provider_symbol: "BYBIT:BTCUSDT.P", label: "BTC" },
-  { provider_symbol: "BYBIT:SPYUSDT.P", label: "S&P-500-Proxy" },
-  { provider_symbol: "XAUUSD", label: "Gold" },
 ];
 
 const DIRECTION_MODE_LABELS: Record<string, string> = {

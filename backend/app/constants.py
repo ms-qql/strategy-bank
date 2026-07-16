@@ -23,8 +23,6 @@ RUN_KINDS: list[str] = ["standard", "holdout", "forward_test"]
 
 DEFAULT_INSTRUMENTS: list[dict[str, str]] = [
     {"provider_symbol": "BYBIT:BTCUSDT.P", "label": "BTC"},
-    {"provider_symbol": "BYBIT:SPYUSDT.P", "label": "S&P-500-Proxy"},
-    {"provider_symbol": "XAUUSD", "label": "Gold"},
 ]
 
 DEFAULT_TIMEFRAME = "4h"
