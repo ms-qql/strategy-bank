@@ -308,3 +308,16 @@ Alternativen (`ta.dmi(...)` für ADX, manuelle Berechnung für KAMA); `_extract_
 lehnt Ausgaben mit diesen Built-ins hart ab.
 
 **Fix-Deployment:** 2026-07-17 · v0.2.25 · Produktion
+
+### 2026-07-17 — Compiler-Feedback-Schleife statt Blacklist (Root Cause)
+
+Die Blacklist gegen einzelne halluzinierte `ta.*`-Built-ins (adx, kama, …) ist
+Whack-a-Mole: jede neue Fehl-Generierung braucht einen eigenen Fix-Commit.
+Root-Cause-Fix: `backtest_executions` speichert jetzt den letzten Provider-
+Fehler (`last_provider_error`, Migration `012_pine_regeneration_feedback.sql`).
+Bei jedem Retry derselben Execution wird dieser Fehlertext in den nächsten
+Pine-Generierungsprompt zurückgespeist (`pine_generator.generate(...,
+previous_error=...)`) — die KI korrigiert sich selbst anhand des exakten
+Compiler-Fehlers, statt dass wir jedes ungültige Built-in vorab kennen müssen.
+Die bestehende Blacklist bleibt als schnelle Erstverteidigung für bereits
+bekannte Fälle erhalten.

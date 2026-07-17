@@ -176,18 +176,20 @@ def _exec_row_from_run(run: dict) -> dict:
 
 
 def _find_or_create_execution(cur, run: dict, identity_key: str) -> dict:
-    strategy = _load_strategy_details(cur, run["strategy_version_id"])
-    if strategy.get("_pine_error"):
-        raise PineGenerationError(strategy["_pine_error"])
-
-    pine_source = strategy.get("pine_source", "// Pine source TBD")
     cur.execute(
         "SELECT * FROM backtest_executions WHERE idempotency_key = %s",
         [identity_key],
     )
     existing = cur.fetchone()
+
     if existing:
         if not existing.get("external_job_id"):
+            strategy = _load_strategy_details(
+                cur, run["strategy_version_id"], previous_error=existing.get("last_provider_error"),
+            )
+            if strategy.get("_pine_error"):
+                raise PineGenerationError(strategy["_pine_error"])
+            pine_source = strategy.get("pine_source", "// Pine source TBD")
             cur.execute(
                 "UPDATE backtest_executions SET pine_source = %s, provider_status = 'pending' WHERE id = %s",
                 [pine_source, existing["id"]],
@@ -199,6 +201,11 @@ def _find_or_create_execution(cur, run: dict, identity_key: str) -> dict:
             [existing["id"], run["id"]],
         )
         return existing
+
+    strategy = _load_strategy_details(cur, run["strategy_version_id"])
+    if strategy.get("_pine_error"):
+        raise PineGenerationError(strategy["_pine_error"])
+    pine_source = strategy.get("pine_source", "// Pine source TBD")
 
     cur.execute(
         """
@@ -302,8 +309,8 @@ def _mark_failed(cur, run_id: UUID, exec_row: dict, message: str, category: str)
         [message, category, _epoch(), run_id],
     )
     cur.execute(
-        "UPDATE backtest_executions SET provider_status = 'failed', completed_at = %s WHERE id = %s",
-        [_epoch(), exec_row["id"]],
+        "UPDATE backtest_executions SET provider_status = 'failed', last_provider_error = %s, completed_at = %s WHERE id = %s",
+        [message, _epoch(), exec_row["id"]],
     )
     try:
         cur.execute(
@@ -314,7 +321,7 @@ def _mark_failed(cur, run_id: UUID, exec_row: dict, message: str, category: str)
         pass
 
 
-def _load_strategy_details(cur, version_id: UUID) -> dict:
+def _load_strategy_details(cur, version_id: UUID, previous_error: str | None = None) -> dict:
     cur.execute(
         """SELECT sv.*, b.timeframe, b.period_start, b.period_end, b.backtest_profile_id
            FROM strategy_versions sv
@@ -338,6 +345,7 @@ def _load_strategy_details(cur, version_id: UUID) -> dict:
             params=snapshot.get("parameters"),
             timeframe=row.get("timeframe", "1h"),
             direction=row.get("direction_mode"),
+            previous_error=previous_error,
         )
         row["pine_source"] = pine_source
     except PineGenerationError as e:

@@ -49,6 +49,21 @@ class TestBuildPrompt:
         assert "signal_reversal" not in prompt
         assert "Gegensignal" in prompt
 
+    def test_no_previous_error_omits_feedback_block(self):
+        prompt = pg.build_prompt(
+            SNAPSHOT, params=[], timeframe="1h", direction="kombiniert",
+            initial_capital=10_000, commission_pct=0.06, slippage_ticks=2, pyramiding=0,
+        )
+        assert "vorherige Generierungsversuch" not in prompt
+
+    def test_previous_error_is_fed_back_into_prompt(self):
+        prompt = pg.build_prompt(
+            SNAPSHOT, params=[], timeframe="1h", direction="kombiniert",
+            initial_capital=10_000, commission_pct=0.06, slippage_ticks=2, pyramiding=0,
+            previous_error='{"error":"backtest_failed","message":"ta.kama is not a function"}',
+        )
+        assert "ta.kama is not a function" in prompt
+
 
 class TestExtractPine:
     def test_extracts_fenced_block(self):

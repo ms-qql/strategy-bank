@@ -43,6 +43,7 @@ def build_prompt(
     commission_pct: float,
     slippage_ticks: int,
     pyramiding: int,
+    previous_error: str | None = None,
 ) -> str:
     entry_rule = (snapshot.get("entry_rule") or "").strip()
     exit_rule = (snapshot.get("exit_rule") or "").strip()
@@ -60,6 +61,18 @@ def build_prompt(
         f"  - {p.get('name')}: default={p.get('value')} ({p.get('unit') or 'ohne Einheit'})"
         for p in params
     ) or "  (keine — sinnvolle Standardwerte selbst wählen und als input.* deklarieren)"
+
+    previous_error_block = (
+        f"""
+WICHTIG: Der vorherige Generierungsversuch wurde vom Pine-Compiler/Provider mit
+folgendem Fehler abgelehnt:
+  {previous_error}
+Vermeide genau dieses Problem — nutze KEIN Built-in, das in diesem Fehler als
+ungültig/nicht existent genannt wird, und wähle eine valide Pine-v5-Alternative.
+"""
+        if previous_error
+        else ""
+    )
 
     return f"""Schreib ein vollständiges, lauffähiges Pine Script v5 für folgende Trading-Strategie.
 
@@ -90,7 +103,7 @@ Anforderungen an das Script:
 - `ta.adx(...)` existiert NICHT als Pine-Built-in — für ADX `[diplus, diminus, adx] = ta.dmi(diLength, adxLength)` verwenden.
 - `ta.kama(...)` existiert NICHT als Pine-Built-in — KAMA (Kaufman Adaptive Moving Average) selbst
   aus `ta.change`/`ta.cum`/rekursivem `var float` berechnen, kein Built-in dafür nutzen.
-
+{previous_error_block}
 Antworte AUSSCHLIESSLICH mit einem einzigen ```pine-Codeblock (kein Text davor/danach),
 der mit `//@version=5` beginnt."""
 
@@ -117,8 +130,15 @@ def generate(
     commission_pct: float = 0.06,
     slippage_ticks: int = 2,
     pyramiding: int = 0,
+    previous_error: str | None = None,
 ) -> str:
-    """Haupteinstieg: erzeugt vollständigen Pine-v5-Quelltext via LLM."""
+    """Haupteinstieg: erzeugt vollständigen Pine-v5-Quelltext via LLM.
+
+    `previous_error` ist der Provider-/Compiler-Fehler eines vorherigen Versuchs
+    für dieselbe Execution (Retry) — wird in den Prompt zurückgespeist, damit die
+    KI sich selbst korrigiert, statt jede halluzinierte Funktion einzeln per
+    Blacklist abfangen zu müssen.
+    """
     direction = direction or snapshot.get("direction") or "kombiniert"
     entry_rule = (snapshot.get("entry_rule") or "").strip()
     if not entry_rule:
@@ -134,6 +154,7 @@ def generate(
         commission_pct=commission_pct,
         slippage_ticks=slippage_ticks,
         pyramiding=pyramiding,
+        previous_error=previous_error,
     )
 
     try:
