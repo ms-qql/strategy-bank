@@ -298,3 +298,13 @@ Report-Link und Erfolgsstatus direkt. Der bestehende Job-ID-/Polling-Pfad bleibt
 für asynchrone Provider-Antworten erhalten.
 
 **Fix-Deployment:** 2026-07-16 · v0.2.23 · Produktion
+
+### 2026-07-16/17 — Halluzinierte `ta.*`-Built-ins in generierten Pine-Skripten
+
+Der LLM-Generator produzierte wiederholt nicht existierende Pine-v5-Built-ins
+(`ta.adx(...)`, `ta.kama(...)`), was jeden Batch-Backtest-Retry mit demselben
+Runtime-Fehler scheitern ließ. Prompt steuert jetzt explizit auf die korrekten
+Alternativen (`ta.dmi(...)` für ADX, manuelle Berechnung für KAMA); `_extract_pine`
+lehnt Ausgaben mit diesen Built-ins hart ab.
+
+**Fix-Deployment:** 2026-07-17 · v0.2.25 · Produktion
