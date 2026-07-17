@@ -26,7 +26,7 @@ from .opencode_extraction import run_opencode
 _PINE_FENCE_RE = re.compile(r"```(?:pine|pinescript)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 _VERSION_TAG_RE = re.compile(r"^//\s*@version\s*=\s*5")
 _INVALID_STRATEGY_MEMBER_RE = re.compile(r"\bstrategy\s*\.\s*(?:signal_reversal|entry_exit)\b")
-_INVALID_TA_BUILTIN_RE = re.compile(r"\bta\s*\.\s*adx\s*\(")
+_INVALID_TA_BUILTIN_RE = re.compile(r"\bta\s*\.\s*(?:adx|kama)\s*\(")
 
 
 class PineGenerationError(Exception):
@@ -88,6 +88,8 @@ Anforderungen an das Script:
   darf beide Richtungen nehmen.
 - Bei fehlender Exit-Regel: sauberer Bar-Count-Failsafe statt endlos offener Position.
 - `ta.adx(...)` existiert NICHT als Pine-Built-in — für ADX `[diplus, diminus, adx] = ta.dmi(diLength, adxLength)` verwenden.
+- `ta.kama(...)` existiert NICHT als Pine-Built-in — KAMA (Kaufman Adaptive Moving Average) selbst
+  aus `ta.change`/`ta.cum`/rekursivem `var float` berechnen, kein Built-in dafür nutzen.
 
 Antworte AUSSCHLIESSLICH mit einem einzigen ```pine-Codeblock (kein Text davor/danach),
 der mit `//@version=5` beginnt."""
