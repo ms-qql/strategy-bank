@@ -420,7 +420,8 @@ export function QuellenView() {
                   const showStart =
                     s.extraction_status === "noch nicht extrahiert";
                   const showRetry =
-                    s.extraction_status === "Extraktion fehlgeschlagen";
+                    s.extraction_status === "Extraktion fehlgeschlagen" ||
+                    s.extraction_status === "wird extrahiert";
                   return (
                     <>
                       <TableRow

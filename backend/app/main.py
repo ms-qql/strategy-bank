@@ -1,5 +1,8 @@
 """FastAPI-App für Strategy Bank (Solo-Nutzer, kein Mandant/RLS)."""
 
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
@@ -8,6 +11,7 @@ from fastapi.responses import JSONResponse
 from psycopg.errors import ForeignKeyViolation, InvalidTextRepresentation
 
 from .config import settings
+from .db import run_command, run_query
 from .routes import audit as audit_routes
 from .routes import batches as batch_routes
 from .routes import drafts as draft_routes
@@ -18,7 +22,40 @@ from .routes import results as result_routes
 from .routes import runs as run_routes
 from .routes import sources as source_routes
 
-app = FastAPI(title="Strategy Bank API", version="0.1.0")
+
+def _recover_stuck_extractions() -> None:
+    stale = run_query(
+        """
+        SELECT s.id AS source_id, er.id AS run_id
+        FROM sources s
+        JOIN extraction_runs er ON er.source_id = s.id
+        WHERE s.extraction_status = 'wird extrahiert'
+          AND er.status = 'läuft'
+          AND er.started_at < now() - INTERVAL '30 minutes'
+        """,
+    )
+    if not stale:
+        return
+    now = datetime.now(timezone.utc)
+    for row in stale:
+        run_command(
+            "UPDATE extraction_runs SET status = 'fehlgeschlagen', finished_at = %s, "
+            "error_message = 'Extraktion durch Server-Neustart abgebrochen.' WHERE id = %s",
+            [now, row["run_id"]],
+        )
+        run_command(
+            "UPDATE sources SET extraction_status = 'Extraktion fehlgeschlagen' WHERE id = %s",
+            [row["source_id"]],
+        )
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _recover_stuck_extractions()
+    yield
+
+
+app = FastAPI(title="Strategy Bank API", version="0.1.0", lifespan=lifespan)
 
 # CORS: Next.js-Frontend (Port 3000) spricht cross-origin mit FastAPI
 # (Port 8000). Ohne Middleware blockt der Browser jeden POST (multipart

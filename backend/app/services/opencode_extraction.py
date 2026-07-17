@@ -264,36 +264,52 @@ def _mark_failed(run_id: UUID, source_id: UUID, exc: Exception, stage: str) -> N
         stage,
         type(exc).__name__,
     )
-    run_command(
-        "UPDATE extraction_runs SET status = 'fehlgeschlagen', finished_at = %s, error_message = %s WHERE id = %s",
-        [datetime.now(timezone.utc), "Extraktion konnte nicht abgeschlossen werden.", run_id],
-    )
-    run_command(
-        "UPDATE sources SET extraction_status = 'Extraktion fehlgeschlagen' WHERE id = %s",
-        [source_id],
-    )
+    try:
+        run_command(
+            "UPDATE extraction_runs SET status = 'fehlgeschlagen', finished_at = %s, error_message = %s WHERE id = %s",
+            [datetime.now(timezone.utc), "Extraktion konnte nicht abgeschlossen werden.", run_id],
+        )
+    except Exception:
+        logger.exception("_mark_failed: extraction_runs-Update fehlgeschlagen für run_id=%s", run_id)
+    try:
+        run_command(
+            "UPDATE sources SET extraction_status = 'Extraktion fehlgeschlagen' WHERE id = %s",
+            [source_id],
+        )
+    except Exception:
+        logger.exception("_mark_failed: sources-Update fehlgeschlagen für source_id=%s", source_id)
 
 
 def execute_extraction(run_id: UUID, source_id: UUID, source_content: str, source_hash: str) -> None:
     """Läuft als Background-Task nach dem Start eines Extraktionslaufs."""
     try:
+        _execute_extraction(run_id, source_id, source_content, source_hash)
+    except Exception as exc:
+        _mark_failed(run_id, source_id, exc, "toplevel")
+
+
+def _execute_extraction(run_id: UUID, source_id: UUID, source_content: str, source_hash: str) -> None:
+    try:
         raw_output = run_opencode(build_prompt(source_content))
         parsed = parse_model_output(raw_output)
-    except Exception as exc:  # Provider-Fehler/Timeout/kein valides JSON → kein stiller Retry.
+    except Exception as exc:
         _mark_failed(run_id, source_id, exc, "provider_or_parser")
         return
 
     strategies = parsed["strategies"]
 
     if not strategies:
-        run_command(
-            "UPDATE extraction_runs SET status = 'keine Treffer', finished_at = %s WHERE id = %s",
-            [datetime.now(timezone.utc), run_id],
-        )
-        run_command(
-            "UPDATE sources SET extraction_status = 'extrahiert, keine Treffer' WHERE id = %s",
-            [source_id],
-        )
+        try:
+            run_command(
+                "UPDATE extraction_runs SET status = 'keine Treffer', finished_at = %s WHERE id = %s",
+                [datetime.now(timezone.utc), run_id],
+            )
+            run_command(
+                "UPDATE sources SET extraction_status = 'extrahiert, keine Treffer' WHERE id = %s",
+                [source_id],
+            )
+        except Exception as exc:
+            _mark_failed(run_id, source_id, exc, "keine_treffer_db")
         return
 
     try:
