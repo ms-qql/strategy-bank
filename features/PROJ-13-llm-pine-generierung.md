@@ -14,7 +14,7 @@
 
 Der ursprüngliche PROJ-6-Pine-Generator war ein selbstgebauter Regex-Übersetzer
 (~20 Patterns für RSI/SMA/EMA/MACD/Volume/etc.), der natürlichsprachige
-Entry-/Exit-Regeln aus `strategy_versions.snapshot` in Pine-v5-Ausdrücke
+Entry-/Exit-Regeln aus `strategy_versions.snapshot` in Pine-Ausdrücke
 übersetzte. Jede Formulierung außerhalb der vorgesehenen Patterns führte zu
 `PineGenerationError`; der Worker markierte den Run als fehlgeschlagen
 (`error_category = "pine_generation"`). In der Praxis (Nutzerbericht: 20-30
@@ -23,7 +23,7 @@ Formulierungen nie vollständig durch Regex abbildbar sind.
 
 Ein Vergleichstest in einer normalen Terminal-Session (Claude Code mit
 trader.dev-MCP-Zugriff, ohne die App) zeigte den funktionierenden Ansatz:
-das LLM schreibt das vollständige Pine-v5-Script selbst in einem Schritt und
+das LLM schreibt das vollständige Pine-v6-Script selbst in einem Schritt und
 übergibt es an `quick_backtest` — Ergebnis lag innerhalb weniger Sekunden vor
 (Report: `https://mcp-api.trader.dev/backtest/01KXNB97NH73XTK0S2SG4TWRM9`,
 Strategie „Mean-Reversion RSI“ auf BTCUSDT.P, 4h, 2021–2024).
@@ -58,10 +58,10 @@ verdrahtete Modell (`opencode-go/deepseek-v4-flash`).
 ## Acceptance Criteria
 - [x] Öffentliches API von `pine_generator.py` (`generate()`, `PineGenerationError`) bleibt unverändert — `worker.py` erfordert keine Anpassung.
 - [x] `generate()` baut aus dem Snapshot (These, Kategorie, Richtung, Entry-/Exit-Regel, Positions-Modus, Parameter, Warmup-Anforderung) sowie Timeframe/Capital/Commission/Slippage/Pyramiding einen vollständigen Prompt.
-- [x] Der Prompt fordert ein einzelnes, mit `//@version=5` beginnendes Pine-v5-Script in genau einem ```pine-Codeblock ohne Zusatztext.
+- [x] Der Prompt fordert ein einzelnes, mit `//@version=6` beginnendes Pine-Script in genau einem ```pine-Codeblock ohne Zusatztext; der Parser akzeptiert v5 und v6.
 - [x] Der Prompt verlangt explizit edge-getriggerte Entry-/Exit-Logik (kein `strategy.close()` bei jeder Bar mit wahrer Bedingung) sowie Parameter als `input.*`-Deklarationen.
 - [x] Fehlt die Entry-Regel im Snapshot, wird `PineGenerationError` sofort geworfen — kein LLM-Aufruf ohne Mindestinhalt.
-- [x] Scheitert der LLM-Aufruf (Timeout, Provider-Fehler) oder enthält die Antwort kein gültiges Pine-Script (kein `//@version=5`), wird `PineGenerationError` mit verständlichem Grund geworfen statt eines stillen Fehlschlags.
+- [x] Scheitert der LLM-Aufruf (Timeout, Provider-Fehler) oder enthält die Antwort kein gültiges Pine-Script (kein Versionsheader v5/v6), wird `PineGenerationError` mit verständlichem Grund geworfen statt eines stillen Fehlschlags.
 - [x] Bestehende Regex-Übersetzungslogik (~20 Patterns, `_translate_rule` etc.) ist vollständig entfernt.
 - [ ] End-to-End-Verifikation: ein realer Draft aus der laufenden Dev-DB (z. B. „Mean-Reversion RSI“) durchläuft den Worker vollständig bis zu einem erfolgreichen `backtest_executions`-Eintrag.
 - [ ] Änderung ist committed und über die reguläre Test-Suite (`pytest`) grün im CI-Lauf bestätigt.
@@ -69,7 +69,7 @@ verdrahtete Modell (`opencode-go/deepseek-v4-flash`).
 ## Edge Cases
 - Snapshot ohne Parameter (`parameters: []`): Prompt weist das LLM an, selbst sinnvolle Standardwerte zu wählen und als `input.*` zu deklarieren, statt zu scheitern.
 - Snapshot ohne Exit-Regel: Prompt verlangt einen sinnvollen Systemdefault (Bar-Count-Exit) statt einer endlos offenen Position.
-- LLM liefert Erklärtext statt Code oder eine unvollständige/offene Code-Fence: `_extract_pine()` nimmt das letzte ```pine-Fence-Match; ohne erkennbaren `//@version=5`-Tag gilt die Antwort als ungültig → `PineGenerationError`.
+- LLM liefert Erklärtext statt Code oder eine unvollständige/offene Code-Fence: `_extract_pine()` nimmt das letzte ```pine-Fence-Match; ohne Versionsheader v5/v6 gilt die Antwort als ungültig → `PineGenerationError`.
 - LLM-Aufruf (OpenCode-Subprocess) hängt oder überschreitet Timeout: bestehender `extraction_timeout_seconds`-Wert aus `opencode_extraction.py` greift, Fehler wird als `PineGenerationError` durchgereicht.
 - Cascade-Exit-Pattern trotz expliziter Prompt-Anweisung: bleibt Aufgabe des bestehenden PROJ-6-Korrekturpfads (trader.dev-Warning-Auswertung im Worker), nicht Teil dieses Fixes.
 
@@ -225,3 +225,12 @@ Verifikation: neuer Reproduktionsfall vor dem Fix 2-fach rot, danach `tests/test
   229 grün, ein bereits dokumentierter unabhängiger Altfehler in
   `test_results.py`. Status bleibt bis zur Produktions-E2E-Verifikation
   **In Review**; `features/INDEX.md` bleibt unverändert.
+
+## Backoffice-Fix 2026-07-29 — Terminal-Parität für Pine v6
+
+Der erfolgreiche Terminal-Lauf von `RoughPathMomentumStrategy` übergab ein
+3.492 Zeichen langes `//@version=6`-Script an `quick_backtest`. Derselbe Code
+wurde in Strategy Bank durch den fest auf v5 begrenzten Versionscheck vor dem
+Provider-Aufruf verworfen. Der Prompt erzeugt nun Pine v6; `_extract_pine()`
+akzeptiert v5 und v6. Der vollständige Terminal-Quellcode sowie ein
+`generate()`-Regressionstest laufen damit grün.

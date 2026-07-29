@@ -19,7 +19,7 @@ Externe trader.dev-Tools und Fehlermeldungen stammen verbindlich aus `docs/trade
 
 ## Acceptance Criteria
 - [ ] Jeder Run durchläuft genau die Zustandsfolge `geplant → bestätigt → in_queue → läuft → erfolgreich | fehlgeschlagen | abgebrochen`.
-- [ ] Vor der externen Ausführung übersetzt die App die kanonische Entry-/Exit-Regel der freigegebenen Strategieversion in Pine Script v5 (trader.dev akzeptiert ausschließlich vollständigen Pine-Source-Code, kein deklaratives Regelformat).
+- [ ] Vor der externen Ausführung übersetzt die App die kanonische Entry-/Exit-Regel der freigegebenen Strategieversion in Pine Script v6 (bestehendes v5 bleibt lesbar; trader.dev akzeptiert ausschließlich vollständigen Pine-Source-Code, kein deklaratives Regelformat).
 - [ ] Jeder Run erhält einen Idempotency-Key aus Strategieversions-ID, Instrument, Timeframe, Zeitraum, Richtungsmodus, Backtest-Profilversion und Auswertungsart; derselbe Key darf keinen zweiten externen `run_backtest`-Aufruf auslösen.
 - [ ] Runs werden über `run_backtest` (asynchron, mit `get_backtest_result`) ausgeführt, nicht über `quick_backtest` — Pflicht für nachvollziehbaren `jobId`-Lebenszyklus.
 - [ ] Meldet die trader.dev-Antwort ein `cascade_exit_pattern`-Warning mit `severity: error`, wird der Run als fehlgeschlagen markiert, die Pine-Übersetzung korrigiert (Edge-Trigger statt Dauerfeuer-`strategy.close()`) und automatisch einmal neu ausgeführt, bevor der Nutzer eine Fehlermeldung sieht.
@@ -84,7 +84,7 @@ runs (ERWEITERT, ein fachlicher Run je Batch-Kombination)
 
 backtest_executions (NEU, eine externe Ausführung je Idempotency-Key)
   - eindeutiger Idempotency-Key aus allen auswertungsrelevanten Eingaben
-  - vollständiger Pine-Script-v5-Stand
+  - vollständiger Pine-Script-Stand
   - trader.dev-Job-ID und spätere Ergebnis-ID
   - interner Versuch: erster Lauf oder einmalige Cascade-Exit-Korrektur
   - Provider-Status, Warnungen und Ergebnisverfügbarkeit
@@ -135,7 +135,7 @@ nicht.
 - **Separater Worker-Prozess:** Externe Backtests und Ergebnisabfragen dauern länger als eine HTTP-Anfrage. Der Worker verarbeitet sie unabhängig vom Browser und kann nach Neustarts aus den persistenten Zuständen weiterarbeiten.
 - **Eigene externe Ausführung neben dem fachlichen Run:** Der Idempotency-Key beschreibt einen Provider-Aufruf, während im Batch mehrere identische Runs sichtbar sein dürfen. Die Trennung verhindert doppelte Credit-Kosten, ohne Runs zu verschlucken.
 - **Datenbankweit eindeutiger Idempotency-Key:** Gleichzeitige Startversuche und Prozessneustarts können dadurch keinen zweiten `run_backtest`-Aufruf für dieselbe Konfiguration erzeugen.
-- **Pine-Übersetzung vor dem Provider-Aufruf:** trader.dev akzeptiert ausschließlich vollständigen Pine-v5-Quellcode. Gespeicherter Pine-Stand und Executor-Version machen das Ergebnis später reproduzierbar.
+- **Pine-Übersetzung vor dem Provider-Aufruf:** trader.dev akzeptiert ausschließlich vollständigen Pine-Quellcode. Gespeicherter Pine-Stand und Executor-Version machen das Ergebnis später reproduzierbar.
 - **Genau eine interne Cascade-Korrektur:** Nur `cascade_exit_pattern` mit `severity: error` erhält automatisch einen zweiten Versuch mit Edge-Trigger. Alle anderen Fehler bleiben sichtbar und benötigen einen bewussten, erneut kostenbestätigten Retry.
 - **Polling statt WebSockets:** Kurze regelmäßige Statusabfragen reichen für minutenlange Backtests und funktionieren mit der vorhandenen Next.js-/FastAPI-Struktur. Echtzeit-Infrastruktur ist dafür nicht nötig.
 - **Keine stille Symbolersetzung:** Nicht unterstützte Instrumente, Timeframes oder Zeiträume werden als verständlicher Run-Fehler gespeichert; das bewahrt die Vergleichbarkeit.
@@ -166,10 +166,10 @@ nicht.
 - [x] Cancel setzt geplant/bestätigt → abgebrochen
 - [x] Retry erzeugt neuen Run mit Status bestätigt
 
-#### AC-2: Pine-v5-Übersetzung vor externer Ausführung
+#### AC-2: Pine-Übersetzung vor externer Ausführung
 - [x] `backtest_executions.pine_source` speichert vollständigen Pine-Quelltext
 - [x] Worker-Modul hat Struktur für Pine-Übersetzung (via `_load_strategy_details`)
-- [x] Pine-Generator implementiert: Übersetzt natürlichesprachige Regeln (RSI, SMA, MACD, Volume) in Pine-v5
+- [x] Pine-Generator implementiert: Übersetzt natürlichesprachige Regeln in Pine v6 und akzeptiert bestehendes Pine v5
 - [x] Unterstützt: RSI-Thresholds, RSI-Crossover, SMA-Vergleiche, SMA-Crossover, MACD-Crossover, Volume-Bedingungen
 - [x] AND/OR-Kombinationen, parametrisierte Indicator-Inputs per `input.*`
 - [x] Direction-Filter (long-only, short-only, kombiniert)
@@ -319,5 +319,13 @@ Bei jedem Retry derselben Execution wird dieser Fehlertext in den nächsten
 Pine-Generierungsprompt zurückgespeist (`pine_generator.generate(...,
 previous_error=...)`) — die KI korrigiert sich selbst anhand des exakten
 Compiler-Fehlers, statt dass wir jedes ungültige Built-in vorab kennen müssen.
-Die bestehende Blacklist bleibt als schnelle Erstverteidigung für bereits
-bekannte Fälle erhalten.
+Die damalige Blacklist wurde im Backoffice-Fix vom 2026-07-29 entfernt; der
+Compiler-Feedback-Loop ist der alleinige Korrekturpfad.
+
+### 2026-07-29 — Pine-v6 aus erfolgreichem Terminalpfad nicht mehr verwerfen
+
+Der erfolgreiche Terminal-Backtest von `RoughPathMomentumStrategy` verwendete
+Pine v6. Strategy Bank verlangte im Prompt und in `_extract_pine()` dagegen
+hart `//@version=5`; dadurch wurde provider-gültiger Code vor trader.dev als
+`pine_generation` verworfen. Neugenerierung zielt nun auf v6, der Parser
+akzeptiert v5 und v6 für Rückwärtskompatibilität.

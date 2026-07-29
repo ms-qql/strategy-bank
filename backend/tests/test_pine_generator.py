@@ -31,6 +31,8 @@ class TestBuildPrompt:
         assert "RSI Length" in prompt
         assert "4h" in prompt
         assert "```pine" in prompt
+        assert "Pine Script v6" in prompt
+        assert "`//@version=6`" in prompt
 
     def test_missing_exit_rule_asks_for_default(self):
         snapshot = {**SNAPSHOT, "exit_rule": ""}
@@ -99,6 +101,12 @@ class TestGenerate:
         monkeypatch.setattr(pg, "run_opencode", lambda prompt: "```pine\n//@version=5\nstrategy(\"x\")\n```")
         code = pg.generate(SNAPSHOT)
         assert code == '//@version=5\nstrategy("x")'
+
+    def test_accepts_terminal_generated_pine_v6(self, monkeypatch):
+        raw = '```pine\n//@version=6\nstrategy("Rough Path Momentum")\n```'
+        monkeypatch.setattr(pg, "run_opencode", lambda prompt: raw)
+
+        assert pg.generate(SNAPSHOT) == '//@version=6\nstrategy("Rough Path Momentum")'
 
     def test_invalid_llm_output_raises(self, monkeypatch):
         monkeypatch.setattr(pg, "run_opencode", lambda prompt: "Kann ich nicht generieren.")

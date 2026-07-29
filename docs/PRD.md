@@ -19,13 +19,13 @@ Strategy Bank ist eine eigenständige Microapp für einen einzelnen Trader. Sie 
 - Frontend: Next.js 16 (App Router), Tailwind + shadcn/ui.
 - Backend: FastAPI, raw SQL, PostgreSQL.
 - Auth: einfache lokale Single-User-Authentisierung. **Kein** JWT-Mandant-Modell, kein RLS — bewusste Abweichung vom globalen Multi-Tenant-Default, da Solo-Nutzung.
-- Externe Integration: trader.dev MCP (Pine Script v5 Backtests), OpenCode als einziger konfigurierter Agent-Runtime-Pfad im MVP.
+- Externe Integration: trader.dev MCP (Pine Script v5/v6 Backtests; Neugenerierung in v6), OpenCode als einziger konfigurierter Agent-Runtime-Pfad im MVP.
 
 ## 4. Bestätigte externe Capability
 
 Verbindliche Quelle für alle trader.dev-Capabilities und MVP-Annahmen ist `docs/trader-dev-capability-spike.md`.
 
-- Backtest-Ausführung läuft ausschließlich über volle Pine-Script-v5-Quellen (`quick_backtest`/`run_backtest`), kein deklaratives Regel-JSON. Die App muss kanonische Entry-/Exit-Regeln in Pine Script übersetzen.
+- Backtest-Ausführung läuft ausschließlich über volle Pine-Script-Quellen (`quick_backtest`/`run_backtest`), kein deklaratives Regel-JSON. Die App erzeugt Pine v6 und akzeptiert bestehende v5-Quellen weiterhin.
 - Standard-Testuniversum (verbindlich, kein weiterer Spike nötig):
   | Fachliches Instrument | Provider-Symbol | Markt |
   |---|---|---|

@@ -1,5 +1,5 @@
-"""PROJ-6 Pine-v5-Generator — übersetzt Strategie-JSONB-Snapshot in validen
-Pine-Script-v5-Quellcode.
+"""PROJ-6 Pine-Generator — übersetzt Strategie-JSONB-Snapshot in validen
+Pine-Script-Quellcode.
 
 Ursprünglich ein selbstgebauter Regex-Übersetzer (~20 Patterns) für die
 natürlichsprachigen Entry-/Exit-Regeln. Der Regex-Ansatz scheiterte an jeder
@@ -11,7 +11,7 @@ einem LLM-Schritt und übergibt es an trader.dev) in Sekunden löst.
 Dieses Modul ersetzt den Regex-Übersetzer durch genau diesen LLM-Schritt:
 `generate()` baut aus dem Snapshot (These, Entry-/Exit-Regel, Parameter,
 Richtung, Positions-Modus) einen Prompt und lässt die bereits konfigurierte
-OpenCode-Runtime (siehe `opencode_extraction.py`) das vollständige Pine-v5-
+OpenCode-Runtime (siehe `opencode_extraction.py`) das vollständige Pine-v6-
 Script schreiben. Öffentliches API (`generate`, `PineGenerationError`)
 bleibt unverändert — `worker.py` braucht keine Anpassung.
 """
@@ -24,7 +24,7 @@ from typing import Any
 from .opencode_extraction import run_opencode
 
 _PINE_FENCE_RE = re.compile(r"```(?:pine|pinescript)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
-_VERSION_TAG_RE = re.compile(r"^//\s*@version\s*=\s*5")
+_VERSION_TAG_RE = re.compile(r"^//\s*@version\s*=\s*[56]\b")
 _INVALID_STRATEGY_MEMBER_RE = re.compile(r"\bstrategy\s*\.\s*(?:signal_reversal|entry_exit)\b")
 
 
@@ -67,13 +67,13 @@ WICHTIG: Der vorherige Generierungsversuch wurde vom Pine-Compiler/Provider mit
 folgendem Fehler abgelehnt:
   {previous_error}
 Vermeide genau dieses Problem — nutze KEIN Built-in, das in diesem Fehler als
-ungültig/nicht existent genannt wird, und wähle eine valide Pine-v5-Alternative.
+ungültig/nicht existent genannt wird, und wähle eine valide Pine-v6-Alternative.
 """
         if previous_error
         else ""
     )
 
-    return f"""Schreib ein vollständiges, lauffähiges Pine Script v5 für folgende Trading-Strategie.
+    return f"""Schreib ein vollständiges, lauffähiges Pine Script v6 für folgende Trading-Strategie.
 
 These: {thesis or "(nicht angegeben)"}
 Kategorie: {category}
@@ -101,7 +101,7 @@ Anforderungen an das Script:
 - Bei fehlender Exit-Regel: sauberer Bar-Count-Failsafe statt endlos offener Position.
 {previous_error_block}
 Antworte AUSSCHLIESSLICH mit einem einzigen ```pine-Codeblock (kein Text davor/danach),
-der mit `//@version=5` beginnt."""
+der mit `//@version=6` beginnt."""
 
 
 def _extract_pine(raw_text: str) -> str:
@@ -127,7 +127,7 @@ def generate(
     pyramiding: int = 0,
     previous_error: str | None = None,
 ) -> str:
-    """Haupteinstieg: erzeugt vollständigen Pine-v5-Quelltext via LLM.
+    """Haupteinstieg: erzeugt vollständigen Pine-Quelltext via LLM.
 
     `previous_error` ist der Provider-/Compiler-Fehler eines vorherigen Versuchs
     für dieselbe Execution (Retry) — wird in den Prompt zurückgespeist, damit die
@@ -159,5 +159,5 @@ def generate(
 
     pine_source = _extract_pine(raw)
     if not pine_source:
-        raise PineGenerationError("OpenCode-Antwort enthielt kein gültiges Pine-v5-Script.")
+        raise PineGenerationError("OpenCode-Antwort enthielt kein gültiges Pine-Script (v5/v6).")
     return pine_source

@@ -7,7 +7,7 @@ Aufgabe:
   3. Bestehende, noch nicht terminale Backtests wieder aufnehmen
   4. Idempotency-Key aus Run-Parametern bauen
   5. Existierende backtest_execution finden oder neue anlegen
-  6. Pine-v5-Übersetzung aus strategy_versions.snapshot generieren
+  6. Pine-Übersetzung aus strategy_versions.snapshot generieren
   7. run_backtest direkt via trader.dev MCP starten
   8. get_backtest_result pollen
   9. Ergebnis in backtest_executions speichern, Run-Status aktualisieren
