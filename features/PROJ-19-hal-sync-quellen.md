@@ -1,8 +1,8 @@
 # PROJ-19: Hal-Vault-Sync für Quellen + Feldbereinigung
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-07-29
-**Last Updated:** 2026-07-29 (QA — 5 Bugs gefunden und gefixt, alle AC bestanden)
+**Last Updated:** 2026-07-29 (Deployed v0.2.31-PROJ-19)
 
 ## Dependencies
 - Requires: PROJ-9 (Markdown-Export) — die bestehende Export-Logik liefert die Inhaltsstruktur für das Hal-Markdown.
@@ -276,4 +276,6 @@ Keine neuen Abhängigkeiten. Nur Python-Stdlib:
 - **Recommendation:** Deploy
 
 ## Deployment
-_To be added by /abc-deploy_
+**Deployed:** 2026-07-29 · **Version:** v0.2.31-PROJ-19 · **Host:** Dokploy Compose-App (`ms-qql/strategy-bank`, Branch `main`, `docker-compose.dokploy.yml`)
+
+Follow-up deploy, keine Infra-Änderung nötig (keine neuen Env-Vars, keine neue Dependency, keine DB-Migration — DB-Spalten bleiben laut Tech Design erhalten). Push nach `main` löst Auto-Deploy aus.
