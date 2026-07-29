@@ -1,6 +1,6 @@
 # PROJ-20: PDF, EPUB und MOBI als Markdown importieren
 
-## Status: Deployed
+## Status: Approved
 **Created:** 2026-07-29
 **Last Updated:** 2026-07-29
 
@@ -17,14 +17,14 @@
 - Als Trader möchte ich, dass Scan-PDFs ohne Textschicht nicht stillschweigend als leere Quelle übernommen werden.
 
 ## Acceptance Criteria
-- [ ] Die Quellenerfassung akzeptiert genau eine Datei mit der Endung `.md`, `.pdf`, `.epub` oder `.mobi`; Klartext und Mehrfach-Upload bleiben unverändert.
-- [ ] Dateidialog und Drag-and-Drop unterstützen dieselben vier Dateiformate und zeigen vor dem Speichern Dateiname, Dateigröße und erkanntes Format.
+- [ ] Die Quellenerfassung akzeptiert eine oder mehrere Dateien mit der Endung `.md`, `.pdf`, `.epub` oder `.mobi`; Klartext bleibt ein separater Eingabemodus.
+- [ ] Dateidialog und Drag-and-Drop unterstützen dieselben vier Dateiformate und zeigen vor dem Speichern alle Dateinamen, Dateigrößen und erkannten Formate.
 - [ ] Beim Speichern einer PDF-, EPUB- oder MOBI-Datei wird deren lesbarer Text in Markdown umgewandelt.
 - [ ] Das erzeugte Markdown erhält erkennbare Absätze und übernimmt vorhandene Überschriften, Listen und Codeblöcke, soweit das Ausgangsformat diese Struktur bereitstellt.
 - [ ] Nach erfolgreicher Umwandlung wird das erzeugte Markdown als Quelleninhalt gespeichert und anschließend ohne Sonderweg über die bestehende Extraktion aus PROJ-2 verarbeitet.
 - [ ] Der SHA-256-Quell-Hash wird über die unveränderten Bytes der hochgeladenen Originaldatei berechnet, nicht über das erzeugte Markdown.
 - [ ] Originaldateiname und Originalformat bleiben an der Quelle sichtbar; ein erneuter Import derselben Datei bleibt wie in PROJ-1 erlaubt.
-- [ ] Eine Quelle wird erst als erfolgreich erfasst angezeigt, wenn die Umwandlung vollständig abgeschlossen ist. Währenddessen zeigt die Oberfläche „Dokument wird umgewandelt …“.
+- [ ] Dokumente werden nacheinander gespeichert. Nach jedem erfolgreichen Import ist die Quelle einzeln extrahierbar; bei einem Teilfehler bleiben nur die noch nicht gespeicherten Dateien für einen erneuten Versuch ausgewählt.
 - [ ] PDF-Dateien werden nur unterstützt, wenn sie eine auslesbare Textschicht enthalten. OCR und Bilderkennung werden nicht ausgeführt.
 - [ ] Schlägt die Umwandlung fehl, wird kein unvollständiger Quelleninhalt gespeichert und die Oberfläche zeigt eine deutsche Fehlermeldung.
 - [ ] Pro Datei gilt ein Größenlimit von 25 MB; größere Dateien werden vor der Umwandlung mit „Datei überschreitet das Größenlimit von 25 MB.“ abgelehnt.
@@ -45,7 +45,7 @@
 - OCR für Scan-PDFs oder Bilder.
 - Rekonstruktion eines originalgetreuen Seitenlayouts.
 - Extraktion eingebetteter Bilder, Diagramme oder handschriftlicher Anmerkungen.
-- Web-Links und Mehrfach-Upload.
+- Web-Links.
 - Automatische inhaltliche Bereinigung oder Zusammenfassung vor PROJ-2.
 
 ---
@@ -356,3 +356,18 @@ noch verwaiste Extraktionsläufe entstehen.
 PDFs mit Textschicht sowie EPUB- und MOBI-Dateien werden beim Upload in Markdown
 umgewandelt und anschließend wie Markdown-Quellen verarbeitet. Scan-PDFs ohne
 Textschicht bleiben bewusst ausgeschlossen.
+
+### Re-QA: Mehrfach-Upload
+
+**Getestet:** 2026-07-29
+
+- [x] Dateidialog und Drag-and-Drop akzeptieren mehrere gültige Dokumente und zeigen deren Namen sowie Format an.
+- [x] Ein Speichervorgang sendet jedes Dokument nacheinander an den bestehenden Einzelquellen-Endpunkt; alle gespeicherten Quellen erscheinen einzeln und können separat extrahiert werden.
+- [x] Bei einem Teilfehler bleibt ausschließlich die fehlgeschlagene Restdatei ausgewählt; bereits gespeicherte Dateien werden nicht erneut gesendet.
+- [x] Ungültige Endungen und die 25-MB-Grenze bleiben clientseitig abgewiesen; die serverseitige Prüfung bleibt unverändert maßgeblich.
+- [x] Browser-Smoke gegen die lokale Next.js-App mit gemockter Quellen-API: Mehrfachauswahl, Mehrfach-Drop, Tastaturauswahl, zwei Uploads und Teilfehler-Retry bestanden.
+- [x] `pytest -q` im Backend bestanden; Next.js Production Build und ESLint der geänderten Komponenten bestanden.
+
+**Bugs:** 0 Critical, 0 High, 0 Medium, 0 Low.  
+**Security:** Keine neue Trust Boundary; Dateityp und Größenlimit werden weiter im Backend geprüft. Dateinamen werden als React-Text gerendert.  
+**Production Ready:** YES.

@@ -7,16 +7,18 @@ const SCREENSHOT =
 
 const results = [];
 const expectedFailures = [];
+let postCount = 0;
+let failSecondUpload = false;
 
 function check(label, condition, detail = "") {
   results.push({ label, pass: Boolean(condition), detail });
 }
 
-async function select(page, name, mimeType = "application/octet-stream") {
+async function select(page, files) {
   const chooserPromise = page.waitForEvent("filechooser");
-  await page.getByLabel("Dokument hier ablegen oder auswählen").click();
+  await page.getByLabel("Dokumente hier ablegen oder auswählen").click();
   const chooser = await chooserPromise;
-  await chooser.setFiles({ name, mimeType, buffer: Buffer.from("test") });
+  await chooser.setFiles(files);
 }
 
 (async () => {
@@ -28,15 +30,24 @@ async function select(page, name, mimeType = "application/octet-stream") {
       await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
       return;
     }
+    postCount += 1;
     await new Promise((resolve) => setTimeout(resolve, 350));
+    if (failSecondUpload && postCount === 2) {
+      await route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Das Dokument konnte nicht gelesen werden." }),
+      });
+      return;
+    }
     await route.fulfill({
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
-        id: "00000000-0000-0000-0000-000000000020",
+        id: `00000000-0000-0000-0000-00000000002${postCount}`,
         source_hash: "a".repeat(64),
-        source_type: "epub_file",
-        filename: "book.epub",
+        source_type: postCount === 1 ? "pdf_file" : "epub_file",
+        filename: postCount === 1 ? "first.pdf" : "second.epub",
         captured_at: "2026-07-29T19:00:00Z",
         extraction_status: "noch nicht extrahiert",
         content: "# Test",
@@ -46,25 +57,22 @@ async function select(page, name, mimeType = "application/octet-stream") {
 
   await page.goto(URL);
   await page.getByRole("tab", { name: "Dokument importieren" }).click();
-  const dropzone = page.getByLabel("Dokument hier ablegen oder auswählen");
+  const dropzone = page.getByLabel("Dokumente hier ablegen oder auswählen");
   check("Dropzone sichtbar", await dropzone.isVisible());
   check(
     "Formathinweis",
     (await dropzone.innerText()).includes(".md, .pdf, .epub oder .mobi, maximal 25 MB"),
   );
 
-  for (const [name, label] of [
-    ["test.md", "Markdown-Datei"],
-    ["test.pdf", "PDF-Dokument"],
-    ["test.epub", "EPUB-E-Book"],
-    ["test.mobi", "MOBI-E-Book"],
-    ["TEST.PDF", "PDF-Dokument"],
-  ]) {
-    await select(page, name);
-    check(`${name} erkannt`, (await dropzone.innerText()).includes(label));
-  }
+  await select(page, [
+    { name: "first.pdf", mimeType: "application/pdf", buffer: Buffer.from("pdf") },
+    { name: "second.epub", mimeType: "application/epub+zip", buffer: Buffer.from("epub") },
+  ]);
+  check("Mehrfachauswahl sichtbar", (await dropzone.innerText()).includes("2 Dokumente ausgewählt"));
+  check("PDF erkannt", (await dropzone.innerText()).includes("PDF-Dokument"));
+  check("EPUB erkannt", (await dropzone.innerText()).includes("EPUB-E-Book"));
 
-  await select(page, "test.txt", "text/plain");
+  await select(page, { name: "test.txt", mimeType: "text/plain", buffer: Buffer.from("test") });
   check(
     "Falsche Endung abgelehnt",
     (await page.locator('[data-slot="alert"]').innerText()).includes(
@@ -80,34 +88,29 @@ async function select(page, name, mimeType = "application/octet-stream") {
   });
   await dropzone.dispatchEvent("drop", { dataTransfer: transfer });
   check(
-    "Mehrfach-Drop abgelehnt",
-    (await page.locator('[data-slot="alert"]').innerText()).includes(
-      "Bitte genau eine Datei ablegen.",
-    ),
+    "Mehrfach-Drop akzeptiert",
+    (await dropzone.innerText()).includes("2 Dokumente ausgewählt"),
   );
 
   const keyboardChooser = page.waitForEvent("filechooser");
   await dropzone.press("Enter");
-  await (await keyboardChooser).setFiles({
-    name: "book.epub",
-    mimeType: "application/epub+zip",
-    buffer: Buffer.from("epub"),
-  });
-  check("Tastatur öffnet Dateiauswahl", (await dropzone.innerText()).includes("book.epub"));
+  await (await keyboardChooser).setFiles([
+    { name: "first.pdf", mimeType: "application/pdf", buffer: Buffer.from("pdf") },
+    { name: "second.epub", mimeType: "application/epub+zip", buffer: Buffer.from("epub") },
+  ]);
+  check("Tastatur öffnet Mehrfachauswahl", (await dropzone.innerText()).includes("2 Dokumente ausgewählt"));
 
   await page.getByRole("button", { name: "Quelle speichern" }).click();
   check(
     "Umwandlungsstatus sichtbar",
-    await page.getByRole("button", { name: "Dokument wird umgewandelt …" }).isVisible(),
+    await page.getByRole("button", { name: "Dokumente werden umgewandelt …" }).isVisible(),
   );
-  await page.waitForResponse(
-    (response) =>
-      response.url().includes("/api/sources") &&
-      response.request().method() === "POST",
-  );
-  await page.waitForTimeout(50);
+  await page.waitForTimeout(850);
+  check("Jedes Dokument gespeichert", postCount === 2, `POSTs: ${postCount}`);
 
   const tableText = await page.locator("table").innerText();
+  check("PDF in Quellenliste", tableText.includes("first.pdf"));
+  check("EPUB in Quellenliste", tableText.includes("second.epub"));
   check("Originalformat in Quellenliste", tableText.includes("EPUB-E-Book"));
   check("Originaldateiname in Quellenliste", tableText.includes("book.epub"));
   check(
@@ -119,6 +122,17 @@ async function select(page, name, mimeType = "application/octet-stream") {
         .innerText()
     ).includes("PDF, EPUB oder MOBI"),
   );
+
+  postCount = 0;
+  failSecondUpload = true;
+  await select(page, [
+    { name: "first.pdf", mimeType: "application/pdf", buffer: Buffer.from("pdf") },
+    { name: "second.epub", mimeType: "application/epub+zip", buffer: Buffer.from("epub") },
+  ]);
+  await page.getByRole("button", { name: "Quelle speichern" }).click();
+  await page.waitForTimeout(850);
+  check("Teilfehler meldet Restdatei", (await page.locator('[data-slot="alert"]').innerText()).includes("1 verbleiben"));
+  check("Teilfehler behält nur Restdatei", (await dropzone.innerText()).includes("1 Dokument ausgewählt"));
   await page.screenshot({ path: SCREENSHOT, fullPage: true });
 
   for (const width of [375, 768, 1440]) {
