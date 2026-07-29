@@ -24,8 +24,6 @@ _REQUIRED_LOCKED_FIELDS = [
     "entry_rule",
     "exit_rule",
     "warmup_requirement",
-    "simultaneous_entry_exit_behavior",
-    "reversal_behavior",
 ]
 
 
@@ -68,8 +66,6 @@ zwingend mit ``` ab:
       "entry_rule": "boolesche Bedingung als Text, oder null falls nicht ableitbar",
       "exit_rule": "boolesche Bedingung als Text, oder null falls nicht ableitbar",
       "warmup_requirement": "string",
-      "simultaneous_entry_exit_behavior": "string",
-      "reversal_behavior": "string",
       "status": "Entwurf | nicht testbar",
       "status_reason": "string oder null",
       "position_mode": "signal_reversal | entry_exit | null",
@@ -244,8 +240,6 @@ def _normalize_strategy(raw: dict) -> dict:
         "entry_rule": raw.get("entry_rule"),
         "exit_rule": raw.get("exit_rule"),
         "warmup_requirement": raw.get("warmup_requirement"),
-        "simultaneous_entry_exit_behavior": raw.get("simultaneous_entry_exit_behavior"),
-        "reversal_behavior": raw.get("reversal_behavior"),
         "status": status,
         "status_reason": status_reason,
         "position_mode": position_mode,
@@ -323,10 +317,9 @@ def _execute_extraction(run_id: UUID, source_id: UUID, source_content: str, sour
                         id, family_id, extraction_run_id, source_hash, version,
                         name, thesis, category, direction,
                         entry_rule, exit_rule, warmup_requirement,
-                        simultaneous_entry_exit_behavior, reversal_behavior,
                         status, status_reason, original_snapshot,
                         position_mode, mts_compatibility
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     [
                         draft_id,
@@ -341,8 +334,6 @@ def _execute_extraction(run_id: UUID, source_id: UUID, source_content: str, sour
                         normalized["entry_rule"],
                         normalized["exit_rule"],
                         normalized["warmup_requirement"],
-                        normalized["simultaneous_entry_exit_behavior"],
-                        normalized["reversal_behavior"],
                         normalized["status"],
                         normalized["status_reason"],
                         json.dumps(raw_item, ensure_ascii=False),

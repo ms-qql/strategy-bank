@@ -47,8 +47,6 @@ class DraftRead(BaseModel):
     entry_rule: str | None
     exit_rule: str | None
     warmup_requirement: str | None
-    simultaneous_entry_exit_behavior: str | None
-    reversal_behavior: str | None
     status: str
     status_reason: str | None
     created_at: datetime

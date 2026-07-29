@@ -151,24 +151,6 @@ export function EntwurfCard({ draft }: Props) {
           {draft.warmup_requirement}
         </p>
       )}
-      {(draft.simultaneous_entry_exit_behavior || draft.reversal_behavior) && (
-        <div className="mt-2 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
-          {draft.simultaneous_entry_exit_behavior && (
-            <p>
-              <span className="font-medium text-foreground">
-                Gleichzeitiger Entry/Exit:{" "}
-              </span>
-              {draft.simultaneous_entry_exit_behavior}
-            </p>
-          )}
-          {draft.reversal_behavior && (
-            <p>
-              <span className="font-medium text-foreground">Reversal: </span>
-              {draft.reversal_behavior}
-            </p>
-          )}
-        </div>
-      )}
 
       {draft.parameters.length > 0 && (
         <div className="mt-4">

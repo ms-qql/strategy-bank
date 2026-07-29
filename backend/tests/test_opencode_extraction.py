@@ -59,8 +59,6 @@ def test_normalize_strategy_versions_and_locks_missing_rule_citations():
             "entry_rule": "a",
             "exit_rule": "b",
             "warmup_requirement": "14",
-            "simultaneous_entry_exit_behavior": "exit wins",
-            "reversal_behavior": "close first",
             "citations": [{"rule_field": "entry_rule", "excerpt": "a"}],
         }
     )
@@ -74,15 +72,13 @@ def test_execute_extraction_persists_drafts_on_success(monkeypatch):
 {"strategies": [{
     "name": "Test-Strategie", "thesis": "These", "category": "Momentum",
     "direction": "long-only", "entry_rule": "RSI < 30", "exit_rule": "RSI > 70",
-    "warmup_requirement": "14 Perioden", "simultaneous_entry_exit_behavior": "n/a",
-    "reversal_behavior": "n/a", "status": "Entwurf", "status_reason": null,
+    "warmup_requirement": "14 Perioden",
+    "status": "Entwurf", "status_reason": null,
     "parameters": [{"name": "Länge", "value": "14", "unit": "Perioden", "allowed_range": "1-100"}],
     "citations": [
         {"rule_field": "entry_rule", "excerpt": "RSI < 30", "line_reference": "Zeile 1"},
         {"rule_field": "exit_rule", "excerpt": "RSI > 70", "line_reference": "Zeile 2"},
-        {"rule_field": "warmup_requirement", "excerpt": "14 Perioden", "line_reference": "Zeile 3"},
-        {"rule_field": "simultaneous_entry_exit_behavior", "excerpt": "n/a", "line_reference": "Zeile 4"},
-        {"rule_field": "reversal_behavior", "excerpt": "n/a", "line_reference": "Zeile 5"}
+        {"rule_field": "warmup_requirement", "excerpt": "14 Perioden", "line_reference": "Zeile 3"}
     ],
     "open_questions": []
 }]}

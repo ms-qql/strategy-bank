@@ -97,8 +97,6 @@ const SNAPSHOT_LABELS: Record<string, string> = {
   entry_rule: "Entry-Regel",
   exit_rule: "Exit-Regel",
   warmup_requirement: "Warm-up",
-  simultaneous_entry_exit_behavior: "Gleichzeitiger Entry/Exit",
-  reversal_behavior: "Reversal-Verhalten",
   position_mode: "Positionsmodus",
   position_mode_confirmed: "Positionsmodus bestätigt",
   exit_rule_origin: "Exit-Herkunft",
@@ -164,8 +162,6 @@ export default function EntwurfEditPage() {
   const [entryRule, setEntryRule] = useState<string | null>(null);
   const [exitRule, setExitRule] = useState<string | null>(null);
   const [warmup, setWarmup] = useState<string | null>(null);
-  const [simulBehavior, setSimulBehavior] = useState<string | null>(null);
-  const [reversalBehavior, setReversalBehavior] = useState<string | null>(null);
   const [parameters, setParameters] = useState<
     { name: string; value: string; unit: string | null; allowed_range: string | null; is_proposal: boolean }[]
   >([]);
@@ -192,6 +188,7 @@ export default function EntwurfEditPage() {
   const [freezeError, setFreezeError] = useState<string | null>(null);
   const [markReason, setMarkReason] = useState("");
   const [markLoading, setMarkLoading] = useState(false);
+  const [pendingOverwrite, setPendingOverwrite] = useState<Record<string, unknown> | null>(null);
 
   // Gate conditions
   const openQuestionCount = draft?.open_questions.length ?? 0;
@@ -218,8 +215,6 @@ export default function EntwurfEditPage() {
       setEntryRule(d.entry_rule ?? "");
       setExitRule(d.exit_rule ?? "");
       setWarmup(d.warmup_requirement ?? "");
-      setSimulBehavior(d.simultaneous_entry_exit_behavior ?? "");
-      setReversalBehavior(d.reversal_behavior ?? "");
       setParameters(
         d.parameters.map((p) => ({ ...p })),
       );
@@ -252,49 +247,68 @@ export default function EntwurfEditPage() {
     setSaving(true);
     setError(null);
     setSuccess(null);
+    setPendingOverwrite(null);
+
+    const body: Record<string, unknown> = {};
+
+    if (name !== draft?.name) body.name = name;
+    if (thesis !== draft?.thesis) body.thesis = thesis;
+    if (category !== draft?.category) body.category = category;
+    if (direction !== draft?.direction) body.direction = direction;
+    if ((entryRule ?? "") !== (draft?.entry_rule ?? "")) body.entry_rule = entryRule || null;
+    if ((exitRule ?? "") !== (draft?.exit_rule ?? "")) body.exit_rule = exitRule || null;
+    if ((warmup ?? "") !== (draft?.warmup_requirement ?? "")) body.warmup_requirement = warmup || null;
+
+    if ((positionMode ?? "") !== (draft?.position_mode ?? "")) body.position_mode = positionMode || null;
+    if (positionModeConfirmed !== draft?.position_mode_confirmed) body.position_mode_confirmed = positionModeConfirmed;
+    if ((mtsCompatibility ?? "") !== (draft?.mts_compatibility ?? "")) body.mts_compatibility = mtsCompatibility || null;
+    if (mtsConfirmed !== draft?.mts_confirmed) body.mts_confirmed = mtsConfirmed;
+
+    const paramsChanged =
+      JSON.stringify(parameters) !== JSON.stringify(draft?.parameters);
+    if (paramsChanged) {
+      body.parameters = parameters.map((p) => ({
+        name: p.name,
+        value: p.value,
+        unit: p.unit || null,
+        allowed_range: p.allowed_range || null,
+      }));
+    }
+
+    if (Object.keys(body).length === 0) {
+      setSuccess("Keine Änderungen.");
+      setSaving(false);
+      return true;
+    }
+
     try {
-      const body: Record<string, unknown> = {};
-
-      if (name !== draft?.name) body.name = name;
-      if (thesis !== draft?.thesis) body.thesis = thesis;
-      if (category !== draft?.category) body.category = category;
-      if (direction !== draft?.direction) body.direction = direction;
-      if ((entryRule ?? "") !== (draft?.entry_rule ?? "")) body.entry_rule = entryRule || null;
-      if ((exitRule ?? "") !== (draft?.exit_rule ?? "")) body.exit_rule = exitRule || null;
-      if ((warmup ?? "") !== (draft?.warmup_requirement ?? "")) body.warmup_requirement = warmup || null;
-      if ((simulBehavior ?? "") !== (draft?.simultaneous_entry_exit_behavior ?? ""))
-        body.simultaneous_entry_exit_behavior = simulBehavior || null;
-      if ((reversalBehavior ?? "") !== (draft?.reversal_behavior ?? ""))
-        body.reversal_behavior = reversalBehavior || null;
-
-      if ((positionMode ?? "") !== (draft?.position_mode ?? "")) body.position_mode = positionMode || null;
-      if (positionModeConfirmed !== draft?.position_mode_confirmed) body.position_mode_confirmed = positionModeConfirmed;
-      if ((mtsCompatibility ?? "") !== (draft?.mts_compatibility ?? "")) body.mts_compatibility = mtsCompatibility || null;
-      if (mtsConfirmed !== draft?.mts_confirmed) body.mts_confirmed = mtsConfirmed;
-
-      const paramsChanged =
-        JSON.stringify(parameters) !== JSON.stringify(draft?.parameters);
-      if (paramsChanged) {
-        body.parameters = parameters.map((p) => ({
-          name: p.name,
-          value: p.value,
-          unit: p.unit || null,
-          allowed_range: p.allowed_range || null,
-        }));
-      }
-
-      if (Object.keys(body).length === 0) {
-        setSuccess("Keine Änderungen.");
-        return true;
-      }
-
       await apiPatch(`/drafts/${draftId}`, body);
       setSuccess("Gespeichert.");
       await loadDraft();
       return true;
     } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        setPendingOverwrite(body);
+        return false;
+      }
       setError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
       return false;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleOverwrite = async () => {
+    if (!pendingOverwrite) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await apiPatch(`/drafts/${draftId}?overwrite_hal=true`, pendingOverwrite);
+      setPendingOverwrite(null);
+      setSuccess("Gespeichert.");
+      await loadDraft();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
     } finally {
       setSaving(false);
     }
@@ -582,7 +596,7 @@ export default function EntwurfEditPage() {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-1">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="warmup">Warm-up</Label>
               <Input
@@ -591,24 +605,6 @@ export default function EntwurfEditPage() {
                 onChange={(e) => setWarmup(e.target.value)}
                 disabled={isReadOnly}
                 placeholder="z. B. 0 bars"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="simul">Gleichzeitiger Entry/Exit</Label>
-              <Input
-                id="simul"
-                value={simulBehavior ?? ""}
-                onChange={(e) => setSimulBehavior(e.target.value)}
-                disabled={isReadOnly}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="reversal">Reversal-Verhalten</Label>
-              <Input
-                id="reversal"
-                value={reversalBehavior ?? ""}
-                onChange={(e) => setReversalBehavior(e.target.value)}
-                disabled={isReadOnly}
               />
             </div>
           </div>
@@ -820,7 +816,24 @@ export default function EntwurfEditPage() {
                         <Badge variant="outline">Bestätigt</Badge>
                       )}
                     </TableCell>
-                    {!isReadOnly && (
+          {pendingOverwrite && (
+            <Alert className="border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+              <TriangleAlert aria-hidden="true" className="h-4 w-4" />
+              <AlertDescription className="flex flex-col gap-2">
+                <span>Eine Hal-Datei mit diesem Namen existiert bereits für eine andere Strategie. Überschreiben?</span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setPendingOverwrite(null)}>
+                    Abbrechen
+                  </Button>
+                  <Button size="sm" onClick={handleOverwrite} disabled={saving}>
+                    {saving && <Loader className="mr-1 h-4 w-4 animate-spin" />}
+                    Überschreiben
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          )}
+          {!pendingOverwrite && !isReadOnly && (
                       <TableCell>
                         <Button
                           variant="ghost"

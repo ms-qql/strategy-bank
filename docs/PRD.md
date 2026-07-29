@@ -66,6 +66,7 @@ Aus einer Text-/Markdown-Quelle mindestens eine Strategie extrahieren, verifizie
 | PROJ-16 | Scrollbare Strategieversionsauswahl im Backtest | P1 |
 | PROJ-17 | Instrumente pro Batch aktivieren oder ausblenden | P0 |
 | PROJ-18 | Einfachauswahl für den Richtungsmodus | P0 |
+| PROJ-19 | Hal-Vault-Sync für Quellen + Feldbereinigung | P1 |
 
 Empfohlene nächste Umsetzung: PROJ-18 → PROJ-17 → PROJ-14 → PROJ-15 → PROJ-16. PROJ-13 verbleibt bis zur End-to-End-Verifikation in Review.
 

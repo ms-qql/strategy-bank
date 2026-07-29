@@ -54,11 +54,10 @@ def _make_draft(run_id: str, **overrides) -> dict:
            (id, family_id, extraction_run_id, source_hash, version,
             name, thesis, category, direction,
             entry_rule, exit_rule, warmup_requirement,
-            simultaneous_entry_exit_behavior, reversal_behavior,
             status, original_snapshot,
             position_mode, position_mode_confirmed,
             mts_compatibility, mts_confirmed)
-           VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+           VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         [
             draft_id,
             draft_id,
@@ -71,8 +70,6 @@ def _make_draft(run_id: str, **overrides) -> dict:
             entry_rule,
             exit_rule,
             warmup,
-            overrides.get("simultaneous_entry_exit_behavior"),
-            overrides.get("reversal_behavior"),
             status,
             '{"name":"KI-Name","thesis":"KI-These","parameters":[]}',
             position_mode,
@@ -314,7 +311,6 @@ class TestExportMarkdown:
             [
                 '{"name":"Legacy","thesis":"Alt","category":"Trendfolge","direction":"kombiniert",'
                 '"entry_rule":"E1","exit_rule":"X1","warmup_requirement":"0 bars",'
-                '"simultaneous_entry_exit_behavior":null,"reversal_behavior":null,'
                 '"position_mode":null,"position_mode_confirmed":null,'
                 '"exit_rule_origin":null,"mts_compatibility":null,"mts_confirmed":null,'
                 '"parameters":[]}',

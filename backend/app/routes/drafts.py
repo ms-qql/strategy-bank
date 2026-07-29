@@ -15,13 +15,13 @@ from ..schemas.drafts import (
     VersionSummary,
 )
 from ..services.exit_resolver import resolve_exit
+from ..services.hal_sync import sync_draft_to_hal, delete_hal_file, check_name_conflict, safe_filename
 
 router = APIRouter(tags=["drafts"])
 
 _FIELD_NAMES = [
     "name", "thesis", "category", "direction",
     "entry_rule", "exit_rule", "warmup_requirement",
-    "simultaneous_entry_exit_behavior", "reversal_behavior",
 ]
 
 
@@ -44,9 +44,9 @@ def _compute_user_diff(original_snapshot: dict | None, version_snapshot: dict) -
 
 
 @router.patch("/drafts/{draft_id}")
-def update_draft(draft_id: UUID, body: DraftUpdate) -> dict:
+def update_draft(draft_id: UUID, body: DraftUpdate, overwrite_hal: bool = False) -> dict:
     draft = run_query_one(
-        """SELECT id, status, original_snapshot, exit_rule, exit_rule_origin,
+        """SELECT id, name, family_id, status, original_snapshot, exit_rule, exit_rule_origin,
                   position_mode, position_mode_confirmed, mts_confirmed
            FROM strategy_drafts WHERE id = %s""",
         [draft_id],
@@ -90,6 +90,15 @@ def update_draft(draft_id: UUID, body: DraftUpdate) -> dict:
     if body.mts_confirmed is not None:
         update_fields["mts_confirmed"] = body.mts_confirmed
 
+    old_name = draft.get("name")
+    family_id = UUID(str(draft["family_id"]))
+    effective_name = str(update_fields.get("name", old_name) or "")
+
+    if effective_name and not overwrite_hal:
+        conflict_family = check_name_conflict(effective_name, family_id)
+        if conflict_family:
+            raise HTTPException(409, f"Datei {effective_name}.md existiert bereits für eine andere Strategie-Familie ({conflict_family}).")
+
     if update_fields:
         set_clause = ", ".join(f"{k} = %s" for k in update_fields)
         run_command(
@@ -110,6 +119,11 @@ def update_draft(draft_id: UUID, body: DraftUpdate) -> dict:
                 )
 
     _resolve_and_persist_exit(draft_id)
+
+    sync_draft_to_hal(draft_id)
+    new_name = update_fields.get("name")
+    if new_name is not None and safe_filename(str(new_name)) != safe_filename(str(old_name) or ""):
+        delete_hal_file(str(old_name) if old_name else "")
 
     return _load_draft(draft_id)
 
@@ -178,7 +192,6 @@ def freeze_draft(draft_id: UUID) -> dict:
         """
         SELECT sd.id, sd.family_id, sd.name, sd.thesis, sd.category, sd.direction,
                sd.entry_rule, sd.exit_rule, sd.warmup_requirement,
-               sd.simultaneous_entry_exit_behavior, sd.reversal_behavior,
                sd.status, sd.status_reason, sd.original_snapshot,
                sd.position_mode, sd.position_mode_confirmed, sd.exit_rule_origin,
                sd.mts_compatibility, sd.mts_confirmed,
@@ -205,8 +218,6 @@ def freeze_draft(draft_id: UUID) -> dict:
         "entry_rule": full["entry_rule"],
         "exit_rule": full["exit_rule"],
         "warmup_requirement": full["warmup_requirement"],
-        "simultaneous_entry_exit_behavior": full["simultaneous_entry_exit_behavior"],
-        "reversal_behavior": full["reversal_behavior"],
         "position_mode": full["position_mode"],
         "position_mode_confirmed": full["position_mode_confirmed"],
         "exit_rule_origin": full["exit_rule_origin"],
@@ -327,11 +338,10 @@ def new_draft_from_version(version_id: UUID) -> dict:
             id, family_id, extraction_run_id, source_hash, version, parent_version_id,
             name, thesis, category, direction,
             entry_rule, exit_rule, warmup_requirement,
-            simultaneous_entry_exit_behavior, reversal_behavior,
             status,
             position_mode, position_mode_confirmed, exit_rule_origin,
             mts_compatibility, mts_confirmed
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         [
             new_id,
@@ -347,8 +357,6 @@ def new_draft_from_version(version_id: UUID) -> dict:
             snap.get("entry_rule"),
             snap.get("exit_rule"),
             snap.get("warmup_requirement"),
-            snap.get("simultaneous_entry_exit_behavior"),
-            snap.get("reversal_behavior"),
             "Entwurf",
             snap.get("position_mode"),
             snap.get("position_mode_confirmed", False),
@@ -445,8 +453,8 @@ def _load_draft(draft_id: UUID) -> dict:
     draft = run_query_one(
         """
         SELECT id, extraction_run_id, source_hash, version, name, thesis, category, direction,
-               entry_rule, exit_rule, warmup_requirement, simultaneous_entry_exit_behavior,
-               reversal_behavior, status, status_reason, created_at, family_id, parent_version_id,
+               entry_rule, exit_rule, warmup_requirement,
+               status, status_reason, created_at, family_id, parent_version_id,
                position_mode, position_mode_confirmed, exit_rule_origin,
                mts_compatibility, mts_confirmed
         FROM strategy_drafts WHERE id = %s

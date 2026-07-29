@@ -16,8 +16,6 @@ export const draftUpdateSchema = z.object({
   entry_rule: z.string().nullable().optional(),
   exit_rule: z.string().nullable().optional(),
   warmup_requirement: z.string().nullable().optional(),
-  simultaneous_entry_exit_behavior: z.string().nullable().optional(),
-  reversal_behavior: z.string().nullable().optional(),
   status_reason: z.string().nullable().optional(),
   parameters: z.array(parameterEditSchema).optional(),
   position_mode: z.enum(["signal_reversal", "entry_exit"]).optional(),

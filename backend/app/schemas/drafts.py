@@ -21,8 +21,6 @@ class DraftUpdate(BaseModel):
     entry_rule: str | None = None
     exit_rule: str | None = None
     warmup_requirement: str | None = None
-    simultaneous_entry_exit_behavior: str | None = None
-    reversal_behavior: str | None = None
     status_reason: str | None = None
     parameters: list[ParameterEdit] | None = None
     position_mode: str | None = None
