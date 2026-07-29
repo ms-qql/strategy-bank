@@ -1,14 +1,10 @@
-import logging
+import io
 import re
+import zipfile
 from datetime import datetime, timezone
-from pathlib import Path
 from uuid import UUID
 
 from ..db import run_query, run_query_one
-
-logger = logging.getLogger(__name__)
-
-HAL_QUELLEN_DIR = Path("/home/dev/tools/Hal/04 Resources/Strategy_Bank/01_Quellen")
 
 
 def safe_filename(name: str) -> str:
@@ -21,19 +17,6 @@ def _escape_md(text: str | None) -> str:
     if not text:
         return ""
     return str(text).replace("|", "\\|")
-
-
-def check_name_conflict(name: str, family_id: UUID) -> str | None:
-    row = run_query_one(
-        """SELECT family_id
-           FROM strategy_drafts
-           WHERE LOWER(name) = LOWER(%s) AND family_id != %s
-           LIMIT 1""",
-        [name, str(family_id)],
-    )
-    if row:
-        return str(row["family_id"])
-    return None
 
 
 def _build_steckbrief_md(draft: dict) -> str:
@@ -126,7 +109,7 @@ def _build_steckbrief_md(draft: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _load_draft_for_sync(draft_id: UUID) -> dict | None:
+def _load_draft_for_export(draft_id: UUID) -> dict | None:
     return run_query_one(
         """SELECT id, name, family_id, thesis, category, direction,
                   entry_rule, exit_rule, warmup_requirement,
@@ -137,62 +120,34 @@ def _load_draft_for_sync(draft_id: UUID) -> dict | None:
     )
 
 
-def delete_hal_file(name: str) -> None:
-    if not name:
-        return
-    filepath = HAL_QUELLEN_DIR / (safe_filename(name) + ".md")
-    try:
-        filepath.unlink(missing_ok=True)
-    except Exception:
-        logger.exception("Hal-sync: failed to delete stale file %s", filepath)
-
-
-def sync_draft_to_hal(draft_id: UUID) -> None:
-    draft = _load_draft_for_sync(draft_id)
+def build_steckbrief_export(draft_id: UUID) -> tuple[str, str] | None:
+    """Returns (filename, markdown content) for a single draft, or None if not found."""
+    draft = _load_draft_for_export(draft_id)
     if not draft:
-        return
-
-    name = draft.get("name") or "Unbenannt"
-    filename = safe_filename(name) + ".md"
-    family_id = UUID(str(draft["family_id"]))
-    filepath = HAL_QUELLEN_DIR / filename
-
-    try:
-        HAL_QUELLEN_DIR.mkdir(parents=True, exist_ok=True)
-        content = _build_steckbrief_md(draft)
-        filepath.write_text(content, encoding="utf-8")
-    except Exception:
-        logger.exception("Hal-sync failed for draft_id=%s file=%s", draft_id, filepath)
+        return None
+    filename = safe_filename(draft.get("name") or "Unbenannt") + ".md"
+    content = _build_steckbrief_md(draft)
+    return filename, content
 
 
-def sync_all_drafts_to_hal() -> dict:
+def build_all_steckbriefe_zip() -> bytes:
+    """Builds a ZIP of every draft's Hal-Steckbrief for manual import into the vault."""
     drafts = run_query(
-        """SELECT id, name, family_id
-           FROM strategy_drafts
-           ORDER BY created_at""",
+        """SELECT id, name FROM strategy_drafts ORDER BY created_at""",
     )
-    synced = 0
-    skipped = 0
-    errors: list[str] = []
-    owner_by_filename: dict[str, str] = {}
-
-    for d in drafts:
-        filename = safe_filename(d.get("name") or "Unbenannt")
-        family_id = str(d["family_id"])
-        owner = owner_by_filename.get(filename)
-        if owner is not None and owner != family_id:
-            skipped += 1
-            logger.warning(
-                "Hal-sync-all: skip draft_id=%s file=%s.md — already claimed by family_id=%s",
-                d["id"], filename, owner,
-            )
-            continue
-        owner_by_filename[filename] = family_id
-        try:
-            sync_draft_to_hal(UUID(str(d["id"])))
-            synced += 1
-        except Exception:
-            errors.append(str(d["id"]))
-            logger.exception("Hal-sync-all failed for draft_id=%s", d["id"])
-
-    return {"synced": synced, "skipped": skipped, "errors": errors}
+    buffer = io.BytesIO()
+    used_names: dict[str, int] = {}
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for d in drafts:
+            export = build_steckbrief_export(UUID(str(d["id"])))
+            if not export:
+                continue
+            filename, content = export
+            if filename in used_names:
+                used_names[filename] += 1
+                stem = filename[:-3]
+                filename = f"{stem}_{used_names[filename]}.md"
+            else:
+                used_names[filename] = 0
+            zf.writestr(filename, content)
+    return buffer.getvalue()

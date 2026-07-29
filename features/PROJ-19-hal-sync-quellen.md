@@ -2,7 +2,24 @@
 
 ## Status: Deployed
 **Created:** 2026-07-29
-**Last Updated:** 2026-07-29 (Deployed v0.2.31-PROJ-19)
+**Last Updated:** 2026-07-29 (Re-Scope: Download statt Server-Sync, Deployed v0.2.32-PROJ-19)
+
+## Re-Scope-Hinweis (nach Prod-Test, 2026-07-29)
+
+Die ursprüngliche Spec sah einen synchronen Server-seitigen Dateisystem-Write nach
+Hal bei jedem PATCH vor (Teil A unten, "Hal-Vault-Sync"). In der Produktion zeigte
+sich: Dokploy hostet Backend + Frontend auf einem **separaten Server**, der Hal-Vault
+(`/home/dev/tools/Hal`) liegt aber nur auf der Dev-VPS. Der Prod-Container hat
+keinerlei Dateisystem- oder Netzwerkzugriff auf die Dev-VPS — ein serverseitiger
+Sync kann dort strukturell nie ankommen (Backfill wie auch laufender Sync).
+
+**Entscheidung (User, 2026-07-29):** Kein serverseitiger Hal-Write mehr. Stattdessen:
+- Pro Entwurf ein **Download-Button** "Hal-Steckbrief herunterladen" (`GET /hal/drafts/{id}/export`) — liefert die Markdown-Datei als Attachment, der User zieht sie manuell in den Vault.
+- Ein **Bulk-Download** "Alle Hal-Steckbriefe herunterladen (ZIP)" (`GET /hal/export-all`) auf der Quellenerfassungs-Seite — deckt den Backfill-Bedarf für bereits extrahierte Strategien ab, ohne Serverzugriff auf den Vault.
+- Kein Namenskollisions-Handling mehr nötig (kein Server-Write, keine 409-Logik, kein `overwrite_hal`) — Konflikte beim manuellen Reinziehen ins Vault löst der User selbst wie bei jedem anderen Datei-Import.
+- Teil A der ursprünglichen AC (unten) ist damit **ersetzt**, nicht ergänzt. Teil B (Feldbereinigung) ist unverändert gültig und weiterhin erfüllt.
+
+Diese Notiz beschreibt bewusst nur den Re-Scope; die ursprüngliche Spec/AC unten bleibt als historischer Kontext stehen. Für den aktuellen Stand siehe `## QA Test Results` (Update unten).
 
 ## Dependencies
 - Requires: PROJ-9 (Markdown-Export) — die bestehende Export-Logik liefert die Inhaltsstruktur für das Hal-Markdown.
@@ -268,14 +285,32 @@ Keine neuen Abhängigkeiten. Nur Python-Stdlib:
 - **Severity:** Medium
 - **Fix:** `backend/tests/test_hal_sync.py` neu angelegt, 7 Tests, deckt alle oben genannten Fixes + Grundfunktionen ab.
 
-### Summary
+### Summary (v0.2.31-PROJ-19, vor Re-Scope)
 - **Acceptance Criteria:** 23/23 passed
 - **Bugs Found:** 5 total, alle gefixt (0 offen)
 - **Security:** Pass
 - **Production Ready:** YES
 - **Recommendation:** Deploy
 
-## Deployment
-**Deployed:** 2026-07-29 · **Version:** v0.2.31-PROJ-19 · **Host:** Dokploy Compose-App (`ms-qql/strategy-bank`, Branch `main`, `docker-compose.dokploy.yml`)
+---
 
-Follow-up deploy, keine Infra-Änderung nötig (keine neuen Env-Vars, keine neue Dependency, keine DB-Migration — DB-Spalten bleiben laut Tech Design erhalten). Push nach `main` löst Auto-Deploy aus.
+## Re-Scope Update (2026-07-29, v0.2.32-PROJ-19)
+
+Nach Prod-Test durch den User (siehe Re-Scope-Hinweis oben) wurde Teil A komplett
+ersetzt: kein serverseitiger Filesystem-Write mehr, stattdessen Download-Endpunkte.
+
+**Geänderte/entfernte Komponenten:**
+- `backend/app/services/hal_sync.py`: `sync_draft_to_hal`, `sync_all_drafts_to_hal`, `delete_hal_file`, `check_name_conflict` entfernt. Neu: `build_steckbrief_export(draft_id)` (einzeln), `build_all_steckbriefe_zip()` (Bulk-ZIP in-memory, `io`/`zipfile`, keine Festplatten-Schreibzugriffe mehr).
+- `backend/app/routes/hal_sync.py`: `POST /hal/sync-all` ersetzt durch `GET /hal/export-all` (ZIP-Download) und `GET /hal/drafts/{id}/export` (einzelne Markdown-Datei, `Content-Disposition: attachment`).
+- `backend/app/routes/drafts.py`: PATCH-Handler wieder ohne `overwrite_hal`-Query-Param, ohne 409-Konflikt-Check, ohne Sync-Aufruf — reiner CRUD-Handler wie vor PROJ-19.
+- Frontend: `entwuerfe/[id]/page.tsx` — Overwrite-Dialog entfernt, neuer Button "Hal-Steckbrief herunterladen" (Browser-Download via Blob). `quellen-view.tsx` — neuer Button "Alle Hal-Steckbriefe herunterladen (ZIP)" auf der Quellenerfassungs-Seite.
+- `backend/tests/test_hal_sync.py` neu geschrieben: testet die beiden Export-Endpunkte (Content-Disposition, 404, ZIP-Inhalt inkl. Dedupe bei Namenskollision über Familien hinweg) statt Dateisystem-Verhalten.
+
+**Test-Ergebnis:** `pytest backend/tests` → 235 passed (vorbestehender, unabhängiger Fehler in `test_results.py` weiterhin vorhanden, siehe oben), `npx tsc --noEmit` fehlerfrei.
+
+**Production Ready:** YES — löst das strukturelle Problem (kein Netzwerk-/Dateisystemzugriff Prod → Dev-VPS) endgültig, da der Server keine Annahme über den Hal-Vault-Standort mehr trifft.
+
+## Deployment
+**Deployed:** 2026-07-29 · **Version:** v0.2.32-PROJ-19 · **Host:** Dokploy Compose-App (`ms-qql/strategy-bank`, Branch `main`, `docker-compose.dokploy.yml`)
+
+Follow-up deploy, keine Infra-Änderung nötig (keine neuen Env-Vars, keine neue Dependency, keine DB-Migration). Push nach `main` löst Auto-Deploy aus.

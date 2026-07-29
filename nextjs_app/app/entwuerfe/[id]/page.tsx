@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
-import { apiGet, apiPatch, apiPostJson, apiDelete, ApiError } from "@/lib/api-client";
+import { apiGet, apiPatch, apiPostJson, apiDelete, apiUrl, ApiError } from "@/lib/api-client";
 import {
   ArrowLeft,
   BookOpen,
@@ -188,7 +188,6 @@ export default function EntwurfEditPage() {
   const [freezeError, setFreezeError] = useState<string | null>(null);
   const [markReason, setMarkReason] = useState("");
   const [markLoading, setMarkLoading] = useState(false);
-  const [pendingOverwrite, setPendingOverwrite] = useState<Record<string, unknown> | null>(null);
 
   // Gate conditions
   const openQuestionCount = draft?.open_questions.length ?? 0;
@@ -247,7 +246,6 @@ export default function EntwurfEditPage() {
     setSaving(true);
     setError(null);
     setSuccess(null);
-    setPendingOverwrite(null);
 
     const body: Record<string, unknown> = {};
 
@@ -287,10 +285,6 @@ export default function EntwurfEditPage() {
       await loadDraft();
       return true;
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409) {
-        setPendingOverwrite(body);
-        return false;
-      }
       setError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
       return false;
     } finally {
@@ -298,19 +292,22 @@ export default function EntwurfEditPage() {
     }
   };
 
-  const handleOverwrite = async () => {
-    if (!pendingOverwrite) return;
-    setSaving(true);
-    setError(null);
+  const handleHalDownload = async () => {
     try {
-      await apiPatch(`/drafts/${draftId}?overwrite_hal=true`, pendingOverwrite);
-      setPendingOverwrite(null);
-      setSuccess("Gespeichert.");
-      await loadDraft();
+      const res = await fetch(apiUrl(`/hal/drafts/${draftId}/export`));
+      if (!res.ok) throw new Error("Download fehlgeschlagen.");
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const filenameMatch = disposition.match(/filename=(.+)$/);
+      const filename = filenameMatch ? filenameMatch[1] : `${name || "strategie"}.md`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Speichern fehlgeschlagen.");
-    } finally {
-      setSaving(false);
+      setError(e instanceof Error ? e.message : "Download fehlgeschlagen.");
     }
   };
 
@@ -609,14 +606,17 @@ export default function EntwurfEditPage() {
             </div>
           </div>
 
-          {!isReadOnly && (
-            <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={handleHalDownload}>
+              Hal-Steckbrief herunterladen
+            </Button>
+            {!isReadOnly && (
               <Button onClick={handleSave} disabled={saving}>
                 {saving && <Loader className="mr-1 h-4 w-4 animate-spin" />}
                 Speichern
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -816,24 +816,7 @@ export default function EntwurfEditPage() {
                         <Badge variant="outline">Bestätigt</Badge>
                       )}
                     </TableCell>
-          {pendingOverwrite && (
-            <Alert className="border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
-              <TriangleAlert aria-hidden="true" className="h-4 w-4" />
-              <AlertDescription className="flex flex-col gap-2">
-                <span>Eine Hal-Datei mit diesem Namen existiert bereits für eine andere Strategie. Überschreiben?</span>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setPendingOverwrite(null)}>
-                    Abbrechen
-                  </Button>
-                  <Button size="sm" onClick={handleOverwrite} disabled={saving}>
-                    {saving && <Loader className="mr-1 h-4 w-4 animate-spin" />}
-                    Überschreiben
-                  </Button>
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
-          {!pendingOverwrite && !isReadOnly && (
+          {!isReadOnly && (
                       <TableCell>
                         <Button
                           variant="ghost"

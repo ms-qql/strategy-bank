@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Loader } from "lucide-react";
 import { z } from "zod";
-import { apiGet, apiPostForm, ApiError } from "@/lib/api-client";
+import { apiGet, apiPostForm, apiUrl, ApiError } from "@/lib/api-client";
 import {
   MAX_SOURCE_BYTES,
   sourceListSchema,
@@ -389,8 +389,15 @@ export function QuellenView() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Erfasste Quellen</CardTitle>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.open(apiUrl("/hal/export-all"), "_blank")}
+          >
+            Alle Hal-Steckbriefe herunterladen (ZIP)
+          </Button>
         </CardHeader>
         <CardContent>
           {ladeliste ? (
