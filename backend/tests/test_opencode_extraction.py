@@ -1,9 +1,34 @@
 import json
+from pathlib import Path
+import subprocess
 
 import pytest
 
 from app.db import run_command, run_query, run_query_one
 from app.services import opencode_extraction as svc
+
+
+def test_run_opencode_attaches_large_prompt_instead_of_passing_it_as_an_argument(monkeypatch):
+    captured = {}
+
+    def fake_run(args, **_kwargs):
+        captured["args"] = args
+        prompt_path = Path(args[args.index("--file") + 1])
+        captured["path"] = prompt_path
+        captured["content"] = prompt_path.read_text()
+        return subprocess.CompletedProcess(
+            args,
+            0,
+            '{"type":"message.part","part":{"type":"text","text":"ok"}}\n',
+            "",
+        )
+
+    monkeypatch.setattr(svc.subprocess, "run", fake_run)
+
+    assert svc.run_opencode("x" * 2_100_000) == "ok"
+    assert "x" * 2_100_000 not in captured["args"]
+    assert captured["content"] == "x" * 2_100_000
+    assert not captured["path"].exists()
 
 
 def test_extract_json_candidate_handles_missing_closing_fence():

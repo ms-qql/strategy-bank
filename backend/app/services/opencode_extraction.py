@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import subprocess
+import tempfile
 import uuid as _uuid
 from datetime import datetime, timezone
 from uuid import UUID
@@ -94,12 +95,27 @@ Quelle:
 
 def run_opencode(prompt: str) -> str:
     """Startet OpenCode headless, gibt den konkatenierten Antworttext zurück."""
-    result = subprocess.run(
-        [settings.opencode_binary, "run", prompt, "--format", "json", "-m", settings.extraction_model],
-        capture_output=True,
-        text=True,
-        timeout=settings.extraction_timeout_seconds,
-    )
+    # Der extrahierte Text kann größer als das OS-Argumentlimit sein. OpenCode
+    # unterstützt Dateianhänge; damit bleibt die Kommandozeile klein.
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".md") as prompt_file:
+        prompt_file.write(prompt)
+        prompt_file.flush()
+        result = subprocess.run(
+            [
+                settings.opencode_binary,
+                "run",
+                "Folge exakt den Anweisungen in der angehängten Datei.",
+                "--file",
+                prompt_file.name,
+                "--format",
+                "json",
+                "-m",
+                settings.extraction_model,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=settings.extraction_timeout_seconds,
+        )
     if result.returncode != 0:
         raise RuntimeError(f"OpenCode-Prozess beendet mit Code {result.returncode}: {result.stderr[:500]}")
 
