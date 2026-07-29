@@ -1,6 +1,6 @@
 # PROJ-20: PDF, EPUB und MOBI als Markdown importieren
 
-## Status: Architected
+## Status: In Review
 **Created:** 2026-07-29
 **Last Updated:** 2026-07-29
 
@@ -151,7 +151,179 @@ noch verwaiste Extraktionsläufe entstehen.
 - **Storage:** kein MinIO und kein zusätzlicher externer Dienst
 
 ## QA Test Results
-_To be added by /abc-qa_
+**Tested:** 2026-07-29
+**Backend:** FastAPI/TestClient gegen lokale PostgreSQL-Testdatenbank; Browser-API auf `http://127.0.0.1:8200`
+**Frontend:** Next.js Production Build auf `http://127.0.0.1:3120`
+**Tester:** QA Engineer (AI)
+
+### Acceptance Criteria Status
+
+#### AC-1: Einzelquelle und erlaubte Dateiformate
+- [x] Klartext oder genau eine `.md`-, `.pdf`-, `.epub`- oder `.mobi`-Datei wird angenommen.
+- [x] Mehrfach-Drop, fehlende Datei und andere Endungen werden mit deutschen Meldungen abgelehnt.
+
+#### AC-2: Gemeinsame Dateiauswahl
+- [x] Dialog und Drag-and-Drop verwenden dieselbe Dropzone.
+- [x] Name, Größe und erkanntes Format erscheinen vor dem Speichern.
+- [x] Groß-/Kleinschreibung der Endung wird korrekt behandelt.
+
+#### AC-3: PDF, EPUB und MOBI werden in Markdown umgewandelt
+- [x] Text-PDF wird ausgelesen.
+- [x] Echtes EPUB wird in Markdown umgewandelt und über `POST /sources` persistiert.
+- [ ] **BUG-1:** Jeder MOBI-Import schlägt fehl, weil `mobi.extract()` ein Tupel aus
+  Temporärverzeichnis und Ergebnisdatei liefert, der Konverter aber einen einzelnen
+  Dateipfad erwartet.
+
+#### AC-4: Dokumentstruktur bleibt bestmöglich erhalten
+- [x] EPUB-Test erhält Überschrift, Absatz, Liste, Code und Tabelle als Markdown.
+- [x] PDF-Seiten werden in Reihenfolge als lesbarer Text übernommen.
+- [ ] MOBI kann wegen BUG-1 nicht geprüft oder verarbeitet werden.
+
+#### AC-5: Gemeinsamer PROJ-2-Pfad
+- [x] Erfolgreich konvertiertes EPUB liegt im bestehenden `sources.content`.
+- [x] Die vorhandene Extraktionsroute liest weiterhin ausschließlich dieses Inhaltsfeld.
+
+#### AC-6: Hash der Originalbytes
+- [x] API-Test bestätigt SHA-256 über den Upload statt über das konvertierte Markdown.
+
+#### AC-7: Herkunft sichtbar und erneuter Import erlaubt
+- [x] Originalformat wird in der Quellenliste angezeigt.
+- [x] Derselbe Inhalt darf weiterhin mehrfach importiert werden.
+- [ ] **BUG-2:** Der Originaldateiname wird von der API geliefert, aber in der
+  Quellenliste nicht dargestellt.
+
+#### AC-8: Atomarer Speichervorgang und Ladezustand
+- [x] „Dokument wird umgewandelt …“ ist während des Requests sichtbar.
+- [x] Der Datensatz wird erst nach erfolgreicher Konvertierung angelegt.
+
+#### AC-9: Keine OCR
+- [x] Leere Text-PDF wird mit „Die PDF enthält keinen auslesbaren Text.
+  Scan-PDFs werden nicht unterstützt.“ abgelehnt.
+
+#### AC-10: Fehler erzeugen keine Teilquelle
+- [x] Beschädigte PDF-/EPUB-Dateien und leerer Konvertierungsoutput liefern 400.
+- [x] Vor dem erfolgreichen Insert wird kein Extraktionslauf gestartet.
+
+#### AC-11: 25-MB-Limit
+- [x] Client und Backend verwenden 25 MB und dieselbe deutsche Fehlermeldung.
+- [ ] **BUG-3:** Für entpackten EPUB-/MOBI-Inhalt und erzeugtes Markdown existiert
+  kein Ausgabelimit. Ein 7-KB-EPUB erzeugte im Test 5,24 MB Markdown
+  (Faktor 743,8); ein Zip-Bomb-Upload kann Speicher und Datenbank erschöpfen.
+
+#### AC-12: Regression Markdown und Extraktion
+- [x] Alle 20 Source-API-Tests sowie die neuen realen Konvertertests laufen.
+- [x] Next.js Production Build und ESLint der drei geänderten Frontend-Dateien sind grün.
+
+### Edge Cases Status
+
+- [x] Scan-PDF ohne Textschicht: korrekte Ablehnung.
+- [x] Beschädigtes Dokument: korrekte Ablehnung.
+- [ ] **BUG-4:** Ein EPUB mit `META-INF/encryption.xml` wurde nicht als geschützt
+  erkannt und als inhaltsarmes Markdown gespeichert.
+- [x] Leerer Konvertierungsoutput: keine Persistenz.
+- [x] Bilder und eingebettete Medien werden nicht extrahiert.
+- [x] EPUB-Überschrift, Liste, Codeblock und Tabelle werden lesbar übernommen.
+- [x] Kopf-/Fußzeilen werden nicht automatisch bereinigt.
+- [ ] **BUG-5:** Ein fehlerhafter MOBI-Versuch hinterlässt jeweils ein
+  `mobiex*`-Temporärverzeichnis.
+- [x] Endungen werden case-insensitiv erkannt.
+
+### Browser- und Responsive-Test
+
+- [x] 15/15 Browser-Smokes bestanden: Dropzone, vier Formate, falsche Endung,
+  Mehrfach-Drop, Enter-Taste, Ladezustand, Format in Liste sowie 375/768/1440 px.
+- [x] Tastaturbedienung und sichtbarer Fokus der bestehenden Dropzone bleiben erhalten.
+- [ ] **BUG-6:** Der Seitenuntertitel lautet weiterhin
+  „Strategiebeschreibungen als Text oder Markdown-Datei erfassen.“
+- Screenshot: `screenshots/test/proj20-source-row-no-filename.png`
+
+### Security Audit Results
+
+- [x] SQL-Parameter bleiben gebunden; Dateiname und Inhalt werden nicht in SQL interpoliert.
+- [x] Dateiendung, Dateigröße und tatsächliche Dokumentstruktur werden serverseitig geprüft.
+- [x] Dateiname wird nicht als Serverpfad verwendet; React rendert Nutzwerte als Text.
+- [x] Kein MinIO und keine neuen Secrets beteiligt.
+- [ ] **BUG-3:** Unbegrenzte Dekompression/Markdown-Ausgabe ermöglicht
+  Ressourcenerschöpfung. Das ist besonders relevant, weil `/sources` im
+  bestehenden Single-User-System keine eigene Authentisierung oder Rate-Limitierung hat.
+- [ ] **BUG-4:** EPUB-Schutzmetadaten werden nicht erkannt.
+- [ ] **BUG-5:** MOBI-Temporärverzeichnisse werden bei Fehlern nicht bereinigt.
+
+### Bugs Found
+
+#### BUG-1: MOBI-Import funktioniert nie
+- **Severity:** High
+- **Steps to Reproduce:**
+  1. Eine gültige `.mobi`-Datei an `POST /sources` senden.
+  2. `mobi.extract()` liefert `(tempdir, result_path)`.
+  3. Erwartet: Ergebnisdatei wird als EPUB oder HTML in Markdown umgewandelt.
+  4. Tatsächlich: Tupel wird als Dateipfad geprüft; Antwort ist 400
+     „Das Dokument konnte nicht gelesen werden.“.
+- **Zusatz:** Die Bibliothek kann neben EPUB auch HTML/PDF zurückgeben; der aktuelle
+  Code behandelt jedes Ergebnis ausschließlich als EPUB.
+- **Priority:** Fix before deployment.
+
+#### BUG-2: Originaldateiname fehlt in der Quellenliste
+- **Severity:** Medium
+- **Steps to Reproduce:**
+  1. `book.epub` erfolgreich importieren.
+  2. Erwartet: Originalformat und `book.epub` bleiben sichtbar.
+  3. Tatsächlich: Die Tabelle zeigt nur „EPUB-E-Book“.
+- **Screenshot:** `screenshots/test/proj20-source-row-no-filename.png`
+- **Priority:** Fix before deployment.
+
+#### BUG-3: Keine Grenze für entpackten oder konvertierten Inhalt
+- **Severity:** High
+- **Steps to Reproduce:**
+  1. Ein stark komprimiertes EPUB unter 25 MB hochladen.
+  2. Erwartet: Ungewöhnlich stark aufgeblähter Inhalt wird abgebrochen.
+  3. Tatsächlich: 7.049 Upload-Bytes wurden zu 5.242.971 Markdown-Bytes;
+     es gibt weder Verhältnis-, Ausgabe- noch Speicherschranke.
+- **Priority:** Fix before deployment.
+
+#### BUG-4: DRM-/verschlüsseltes EPUB wird nicht erkannt
+- **Severity:** Medium
+- **Steps to Reproduce:**
+  1. EPUB mit `META-INF/encryption.xml` und verschlüsseltem Inhaltsdokument importieren.
+  2. Erwartet: 400 „Geschützte Dokumente werden nicht unterstützt.“.
+  3. Tatsächlich: Import wird akzeptiert und Navigationsreste werden als Markdown gespeichert.
+- **Priority:** Fix before deployment.
+
+#### BUG-5: MOBI-Fehler hinterlassen temporäre Verzeichnisse
+- **Severity:** Medium
+- **Steps to Reproduce:**
+  1. Anzahl `/tmp/mobiex*` erfassen.
+  2. Eine beschädigte MOBI-Datei konvertieren.
+  3. Erwartet: Alle temporären Artefakte werden entfernt.
+  4. Tatsächlich: Pro Versuch bleibt ein neues `mobiex*`-Verzeichnis bestehen.
+- **Priority:** Fix before deployment.
+
+#### BUG-6: Seitenuntertitel nennt nur Markdown
+- **Severity:** Low
+- **Steps to Reproduce:**
+  1. `/quellen` öffnen.
+  2. Erwartet: PDF, EPUB und MOBI werden im Seitenkontext berücksichtigt.
+  3. Tatsächlich: Untertitel nennt weiterhin ausschließlich Text und Markdown.
+- **Priority:** Nice to have.
+
+### Automated Test Summary
+
+- **PROJ-20 gezielt:** 27 bestanden, 1 erwarteter Fehler für BUG-1.
+- **Backend vollständig:** 252 bestanden, 1 erwarteter Fehler für BUG-1,
+  1 bereits zuvor vorhandener fachlich veralteter PROJ-7-Testfehler
+  (`test_multiple_result_types_are_separate_rows` erwartet drei Default-Instrumente,
+  während die Anwendung bewusst nur BTC als Default führt).
+- **Frontend:** Production Build grün; ESLint der geänderten Dateien grün.
+- **Browser:** 15 bestanden, 1 dokumentierter erwarteter Befund (BUG-2).
+
+### Summary
+
+- **Acceptance Criteria:** 9/12 vollständig bestanden.
+- **Bugs Found:** 6 total (0 Critical, 2 High, 3 Medium, 1 Low).
+- **Security:** Nicht bestanden (unbegrenzte Dekompression/Ausgabe und Temp-Leak).
+- **Production Ready:** **NO**.
+- **Recommendation:** BUG-1 und BUG-3 zuerst beheben; danach BUG-2, BUG-4 und
+  BUG-5 vor erneuter QA. BUG-6 kann separat kosmetisch korrigiert werden.
 
 ## Deployment
 _To be added by /abc-deploy_
