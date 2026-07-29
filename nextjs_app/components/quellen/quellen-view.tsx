@@ -490,7 +490,7 @@ export function QuellenView() {
                       </TableRow>
                       {expanded && (
                         <TableRow key={`${s.id}-detail`} className="bg-muted/20">
-                          <TableCell colSpan={6} className="align-top p-0">
+                          <TableCell colSpan={6} className="align-top whitespace-normal p-0">
                             <EntwuerfeSection
                               state={extData.get(s.id)}
                               onRetryLatest={() => toggleExpand(s.id)}
