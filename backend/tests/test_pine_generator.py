@@ -77,17 +77,17 @@ class TestExtractPine:
     def test_rejects_text_without_version_tag(self):
         assert pg._extract_pine("Ich kann das nicht generieren.") == ""
 
+    def test_rejects_prose_with_embedded_version_tag(self):
+        raw = "Ich kann keinen Code liefern, aber //@version=5 ist die aktuelle Version."
+        assert pg._extract_pine(raw) == ""
+
     def test_rejects_internal_position_mode_as_strategy_api(self):
         raw = '//@version=5\nstrategy("x")\nstrategy.signal_reversal'
         assert pg._extract_pine(raw) == ""
 
-    def test_rejects_nonexistent_ta_adx_builtin(self):
+    def test_leaves_ta_builtin_validation_to_compiler_feedback(self):
         raw = '//@version=5\nstrategy("x")\nadx = ta.adx(14, 14)'
-        assert pg._extract_pine(raw) == ""
-
-    def test_rejects_nonexistent_ta_kama_builtin(self):
-        raw = '//@version=5\nstrategy("x")\nk = ta.kama(close, 10)'
-        assert pg._extract_pine(raw) == ""
+        assert pg._extract_pine(raw) == raw
 
 
 class TestGenerate:

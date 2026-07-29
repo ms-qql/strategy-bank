@@ -254,3 +254,17 @@ Keine Bugs gefunden.
 - **Production Ready:** YES
 - **Tests:** 201 passed (7 new PROJ-12 tests + 29 existing PROJ-6 execution tests + 165 other regression tests)
 - **Recommendation:** Deploy
+
+## Backoffice-Fix 2026-07-29 — kürzere Startlatenz und Pine-Wiederverwendung
+
+- Der Worker prüft neue Runs alle 5 statt alle 30 Sekunden; der Heartbeat bleibt
+  unverändert bei 30 Sekunden.
+- `_load_strategy_details()` lädt Batch-Daten über die ID des aktuell
+  verarbeiteten Runs statt über einen beliebigen Run derselben Strategieversion.
+- Ein bereits erfolgreich kompiliertes Pine-Script wird für dieselbe
+  Strategieversion, denselben Timeframe und denselben Richtungsmodus
+  wiederverwendet. Compiler-Retries mit `last_provider_error` umgehen diesen
+  Cache bewusst und generieren korrigiertes Pine.
+- Verifikation: neue Reproduktionstests grün; vollständige Backend-Suite
+  229 grün, ein bereits dokumentierter unabhängiger Altfehler in
+  `test_results.py`.

@@ -31,7 +31,7 @@ from .trader_dev import TraderDevServiceError, get_backtest_result, start_backte
 
 logger = logging.getLogger(__name__)
 
-POLL_INTERVAL_SECONDS = 30
+POLL_INTERVAL_SECONDS = 5
 HEARTBEAT_INTERVAL_SECONDS = 30
 RUN_LIMIT = 5
 
@@ -185,7 +185,7 @@ def _find_or_create_execution(cur, run: dict, identity_key: str) -> dict:
     if existing:
         if not existing.get("external_job_id"):
             strategy = _load_strategy_details(
-                cur, run["strategy_version_id"], previous_error=existing.get("last_provider_error"),
+                cur, run, previous_error=existing.get("last_provider_error"),
             )
             if strategy.get("_pine_error"):
                 raise PineGenerationError(strategy["_pine_error"])
@@ -202,7 +202,7 @@ def _find_or_create_execution(cur, run: dict, identity_key: str) -> dict:
         )
         return existing
 
-    strategy = _load_strategy_details(cur, run["strategy_version_id"])
+    strategy = _load_strategy_details(cur, run)
     if strategy.get("_pine_error"):
         raise PineGenerationError(strategy["_pine_error"])
     pine_source = strategy.get("pine_source", "// Pine source TBD")
@@ -321,18 +321,36 @@ def _mark_failed(cur, run_id: UUID, exec_row: dict, message: str, category: str)
         pass
 
 
-def _load_strategy_details(cur, version_id: UUID, previous_error: str | None = None) -> dict:
+def _load_strategy_details(cur, run: dict, previous_error: str | None = None) -> dict:
     cur.execute(
-        """SELECT sv.*, b.timeframe, b.period_start, b.period_end, b.backtest_profile_id
+        """SELECT sv.*, r.direction_mode, b.timeframe, b.period_start, b.period_end,
+                  b.backtest_profile_id
            FROM strategy_versions sv
            JOIN runs r ON r.strategy_version_id = sv.id
            JOIN batches b ON b.id = r.batch_id
-           WHERE sv.id = %s LIMIT 1""",
-        [version_id],
+           WHERE r.id = %s""",
+        [run["id"]],
     )
     row = cur.fetchone()
     if not row:
         return {}
+
+    if not previous_error:
+        cur.execute(
+            """SELECT pine_source
+               FROM backtest_executions
+               WHERE strategy_version_id = %s
+                 AND timeframe = %s
+                 AND direction_mode = %s
+                 AND provider_status = 'completed'
+               ORDER BY created_at DESC
+               LIMIT 1""",
+            [run["strategy_version_id"], row["timeframe"], row["direction_mode"]],
+        )
+        cached = cur.fetchone()
+        if cached:
+            row["pine_source"] = cached["pine_source"]
+            return row
 
     snapshot = row.get("snapshot") or {}
     if isinstance(snapshot, str):

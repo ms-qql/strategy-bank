@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     trader_dev_api_key: str = ""
     extraction_model: str = "opencode-go/deepseek-v4-flash"
     extraction_prompt_version: str = "v1"
-    extraction_timeout_seconds: float = 300.0
+    extraction_timeout_seconds: float = 60.0
 
     source_max_bytes: int = 2 * 1024 * 1024  # 2 MB, siehe PROJ-1 Edge Cases
 

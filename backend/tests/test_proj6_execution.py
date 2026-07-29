@@ -369,6 +369,11 @@ class TestRetry:
 
 
 class TestRunBacktestExecution:
+    def test_worker_polls_for_new_runs_every_five_seconds(self):
+        from app.services import worker
+
+        assert worker.POLL_INTERVAL_SECONDS == 5
+
     def test_worker_resubmits_execution_without_job_id(self):
         from app.services import worker
 
@@ -433,6 +438,53 @@ class TestRunBacktestExecution:
             worker._find_or_create_execution(cur, run, "test-key")
 
         assert cur.execute.call_args_list[1].args[1][7] == profile_id
+
+    def test_strategy_details_use_current_run_and_cached_pine(self):
+        from app.services import worker
+
+        cur = MagicMock()
+        run = {
+            "id": uuid4(),
+            "strategy_version_id": uuid4(),
+            "direction_mode": "kombiniert",
+        }
+        cur.fetchone.side_effect = [
+            {
+                "snapshot": {"entry_rule": "RSI > 30"},
+                "timeframe": "4h",
+                "direction_mode": "kombiniert",
+            },
+            {"pine_source": "//@version=5\nstrategy('cached')"},
+        ]
+
+        with patch.object(worker, "generate_pine") as generate:
+            details = worker._load_strategy_details(cur, run)
+
+        assert "WHERE r.id = %s" in cur.execute.call_args_list[0].args[0]
+        assert cur.execute.call_args_list[0].args[1] == [run["id"]]
+        assert details["pine_source"] == "//@version=5\nstrategy('cached')"
+        generate.assert_not_called()
+
+    def test_strategy_details_regenerate_with_compiler_feedback(self):
+        from app.services import worker
+
+        cur = MagicMock()
+        run = {
+            "id": uuid4(),
+            "strategy_version_id": uuid4(),
+            "direction_mode": "kombiniert",
+        }
+        cur.fetchone.return_value = {
+            "snapshot": {"entry_rule": "RSI > 30"},
+            "timeframe": "4h",
+            "direction_mode": "kombiniert",
+        }
+
+        with patch.object(worker, "generate_pine", return_value="//@version=5") as generate:
+            worker._load_strategy_details(cur, run, previous_error="ta.kama is not a function")
+
+        assert cur.execute.call_count == 1
+        assert generate.call_args.kwargs["previous_error"] == "ta.kama is not a function"
 
     def test_run_with_backtest_execution_shows_metrics(self, client):
         batch = _make_confirmed_batch(client)

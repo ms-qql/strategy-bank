@@ -211,3 +211,17 @@ Hinweis: Dieses Projekt hat kein JWT/Mandanten-Modell (Single-Tenant-Tool, per P
 Ein Produktionslauf scheiterte bei trader.dev mit `Cannot read properties of undefined (reading 'signal_reversal')`. Ursache war, dass `build_prompt()` die internen Werte `signal_reversal`/`entry_exit` als scheinbare Fachsyntax an das kleinere Produktionsmodell gab und `_extract_pine()` ungültige `strategy.<enum>`-Zugriffe nicht abwies. Der Prompt beschreibt das Verhalten nun ohne interne Bezeichner; die Ausgabeprüfung verlangt den Versions-Header am Anfang und verwirft solche ungültigen Pine-API-Zugriffe vor dem externen Backtest.
 
 Verifikation: neuer Reproduktionsfall vor dem Fix 2-fach rot, danach `tests/test_pine_generator.py` 11/11 grün. Gesamtsuite: 203 grün, nur der bereits dokumentierte, unabhängige Fehler `test_multiple_result_types_are_separate_rows` bleibt rot. Status bleibt bis zur Produktions-E2E-Verifikation **In Review**; `features/INDEX.md` ist daher unverändert korrekt.
+
+## Backoffice-Fix 2026-07-29 — robuste Ausgabe und begrenzte Laufzeit
+
+- `_extract_pine()` akzeptiert den Versions-Header nur noch am Anfang der
+  extrahierten Quelle (`match()`); Prosa mit eingebettetem `//@version=5`
+  wird als `pine_generation` abgewiesen, bevor trader.dev Credits verbraucht.
+- Die statische `ta.adx`/`ta.kama`-Blacklist und die zugehörigen Prompt-Sonderfälle
+  wurden entfernt. Unbekannte Pine-Built-ins laufen über den bereits vorhandenen
+  Compiler-Feedback-Loop (`last_provider_error`) statt über Whack-a-Mole-Regeln.
+- Der OpenCode-Timeout beträgt standardmäßig 60 statt 300 Sekunden.
+- Verifikation: neue Reproduktionstests grün; vollständige Backend-Suite
+  229 grün, ein bereits dokumentierter unabhängiger Altfehler in
+  `test_results.py`. Status bleibt bis zur Produktions-E2E-Verifikation
+  **In Review**; `features/INDEX.md` bleibt unverändert.
