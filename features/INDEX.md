@@ -1,6 +1,6 @@
 # Feature Index — Strategy Bank
 
-**Next Available ID:** PROJ-19
+**Next Available ID:** PROJ-20
 
 | ID | Feature | Status | Priorität | Dependencies |
 |---|---|---|---|---|
@@ -22,6 +22,7 @@
 | PROJ-16 | Scrollbare Strategieversionsauswahl im Backtest | Architected | P1 | PROJ-4 |
 | PROJ-17 | Instrumente pro Batch aktivieren oder ausblenden | Deployed (Backend fix, 2026-07-16, v0.2.23) | P0 | PROJ-4, PROJ-5 |
 | PROJ-18 | Einfachauswahl für den Richtungsmodus | Deployed (Frontend + Backend, 2026-07-16, v0.2.23) | P0 | PROJ-4 |
+| PROJ-19 | Hal-Vault-Sync für Quellen + Feldbereinigung | Approved | P1 | PROJ-9, PROJ-2, PROJ-3 |
 
 **Empfohlene nächste Umsetzung:** PROJ-15 → PROJ-16. PROJ-13 verbleibt bis zur End-to-End-Verifikation in Review.
 

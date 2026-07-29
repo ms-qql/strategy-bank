@@ -66,8 +66,6 @@ export const draftSchema = z.object({
   entry_rule: z.string().nullable(),
   exit_rule: z.string().nullable(),
   warmup_requirement: z.string().nullable(),
-  simultaneous_entry_exit_behavior: z.string().nullable(),
-  reversal_behavior: z.string().nullable(),
   status: draftStatusSchema,
   status_reason: z.string().nullable(),
   created_at: z.string(),

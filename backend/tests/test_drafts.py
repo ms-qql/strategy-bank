@@ -51,17 +51,14 @@ def _make_draft(run_id: str, **overrides) -> dict:
            (id, family_id, extraction_run_id, source_hash, version,
             name, thesis, category, direction,
             entry_rule, exit_rule, warmup_requirement,
-            simultaneous_entry_exit_behavior, reversal_behavior,
             status, original_snapshot,
             position_mode, position_mode_confirmed,
             mts_compatibility, mts_confirmed)
-           VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+           VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         [
             draft_id, draft_id, run_id, "abc123",
             name, thesis, category, direction,
             entry_rule, exit_rule, warmup,
-            overrides.get("simultaneous_entry_exit_behavior"),
-            overrides.get("reversal_behavior"),
             status,
             '{"name":"KI-Name","thesis":"KI-These","entry_rule":"RSI < 30","exit_rule":"RSI > 70","parameters":[{"name":"period","value":"14"}]}',
             position_mode, position_mode_confirmed,

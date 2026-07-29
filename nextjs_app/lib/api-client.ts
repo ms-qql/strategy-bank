@@ -1,7 +1,13 @@
 // FastAPI-Backend hinter dem Next.js-Rewrite; lokal ebenfalls via /api.
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "/api";
 
-export class ApiError extends Error {}
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 async function handle<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -13,7 +19,7 @@ async function handle<T>(res: Response): Promise<T> {
     } catch {
       // Body nicht lesbar/kein JSON — Default-Meldung behalten
     }
-    throw new ApiError(detail);
+    throw new ApiError(detail, res.status);
   }
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
@@ -63,6 +69,6 @@ export async function apiDelete(path: string): Promise<void> {
       const body = await res.json();
       if (typeof body?.detail === "string") detail = body.detail;
     } catch { /* ignore */ }
-    throw new ApiError(detail);
+    throw new ApiError(detail, res.status);
   }
 }

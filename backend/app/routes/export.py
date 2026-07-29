@@ -116,8 +116,6 @@ _DETAIL_FIELDS: list[tuple[str, str]] = [
     ("Entry-Regel", "entry_rule"),
     ("Exit-Regel", "exit_rule"),
     ("Warm-up", "warmup_requirement"),
-    ("Simultan-Ein-/Ausstieg", "simultaneous_entry_exit_behavior"),
-    ("Umkehrverhalten", "reversal_behavior"),
 ]
 
 
@@ -203,7 +201,6 @@ def export_markdown(draft_id: UUID) -> PlainTextResponse:
         """
         SELECT id, name, thesis, category, direction,
                entry_rule, exit_rule, warmup_requirement,
-               simultaneous_entry_exit_behavior, reversal_behavior,
                status, status_reason, created_at,
                position_mode, exit_rule_origin, mts_compatibility,
                source_hash
