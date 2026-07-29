@@ -84,7 +84,7 @@ export function QuellenView() {
 
   const [tab, setTab] = useState<"text" | "file">("text");
   const [text, setText] = useState("");
-  const [datei, setDatei] = useState<File | null>(null);
+  const [dateien, setDateien] = useState<File[]>([]);
   const [absenden, setAbsenden] = useState(false);
   const [fehler, setFehler] = useState<string | null>(null);
 
@@ -277,11 +277,11 @@ export function QuellenView() {
 
   function reset() {
     setText("");
-    setDatei(null);
+    setDateien([]);
   }
 
-  function handleDateiChange(file: File | null, error: string | null) {
-    setDatei(file);
+  function handleDateiChange(files: File[], error: string | null) {
+    setDateien(files);
     setFehler(error);
   }
 
@@ -289,27 +289,43 @@ export function QuellenView() {
     e.preventDefault();
     setFehler(null);
 
-    const form = new FormData();
-
     if (tab === "text") {
       if (text.trim().length === 0) {
         setFehler("Quelle enthält keinen Inhalt.");
         return;
       }
-      form.set("content", text);
     } else {
-      if (!datei) {
-        setFehler("Bitte eine Datei (.md, .pdf, .epub oder .mobi) auswählen.");
+      if (dateien.length === 0) {
+        setFehler("Bitte mindestens eine Datei (.md, .pdf, .epub oder .mobi) auswählen.");
         return;
       }
-      form.set("file", datei);
     }
 
     setAbsenden(true);
     try {
-      const data = await apiPostForm<unknown>("/sources", form);
-      const neu = sourceSchema.parse(data);
-      setSources((prev) => [neu, ...prev]);
+      if (tab === "text") {
+        const form = new FormData();
+        form.set("content", text);
+        const data = await apiPostForm<unknown>("/sources", form);
+        setSources((prev) => [sourceSchema.parse(data), ...prev]);
+      } else {
+        const saved: Source[] = [];
+        for (const file of dateien) {
+          const form = new FormData();
+          form.set("file", file);
+          try {
+            saved.push(sourceSchema.parse(await apiPostForm<unknown>("/sources", form)));
+          } catch (err) {
+            setSources((prev) => [...saved.reverse(), ...prev]);
+            setDateien(dateien.slice(saved.length));
+            setFehler(
+              `${saved.length} Dokument${saved.length === 1 ? "" : "e"} gespeichert. ${dateien.length - saved.length} verbleiben: ${err instanceof ApiError ? err.message : "Speichern fehlgeschlagen."}`,
+            );
+            return;
+          }
+        }
+        setSources((prev) => [...saved.reverse(), ...prev]);
+      }
       reset();
     } catch (err) {
       setFehler(
@@ -326,8 +342,7 @@ export function QuellenView() {
         <CardHeader>
           <CardTitle>Quelle erfassen</CardTitle>
           <CardDescription>
-            Genau eine Quelle je Vorgang: eingefügter Klartext oder eine
-            hochgeladene .md-, .pdf-, .epub- oder .mobi-Datei.
+            Klartext oder mehrere .md-, .pdf-, .epub- und .mobi-Dateien erfassen.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -359,7 +374,7 @@ export function QuellenView() {
               </TabsContent>
 
               <TabsContent value="file" className="pt-2">
-                <MarkdownDropzone datei={datei} onChange={handleDateiChange} />
+                <MarkdownDropzone dateien={dateien} onChange={handleDateiChange} />
               </TabsContent>
             </Tabs>
 
@@ -373,7 +388,7 @@ export function QuellenView() {
               <Button type="submit" disabled={absenden}>
                 {absenden
                   ? tab === "file"
-                    ? "Dokument wird umgewandelt …"
+                    ? "Dokumente werden umgewandelt …"
                     : "Speichern …"
                   : "Quelle speichern"}
               </Button>

@@ -1,6 +1,6 @@
 # PROJ-20: PDF, EPUB und MOBI als Markdown importieren
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-07-29
 **Last Updated:** 2026-07-29
 
@@ -357,6 +357,10 @@ PDFs mit Textschicht sowie EPUB- und MOBI-Dateien werden beim Upload in Markdown
 umgewandelt und anschließend wie Markdown-Quellen verarbeitet. Scan-PDFs ohne
 Textschicht bleiben bewusst ausgeschlossen.
 
+**Mehrfach-Upload:** Mehrere Dokumente werden nacheinander gespeichert und erscheinen
+anschließend als einzeln extrahierbare Quellen. Bei einem Teilfehler bleibt nur die
+noch nicht gespeicherte Datei zur Wiederholung ausgewählt.
+
 ### Re-QA: Mehrfach-Upload
 
 **Getestet:** 2026-07-29
@@ -371,3 +375,10 @@ Textschicht bleiben bewusst ausgeschlossen.
 **Bugs:** 0 Critical, 0 High, 0 Medium, 0 Low.  
 **Security:** Keine neue Trust Boundary; Dateityp und Größenlimit werden weiter im Backend geprüft. Dateinamen werden als React-Text gerendert.  
 **Production Ready:** YES.
+
+## Deployment: Mehrfach-Upload
+
+**Deployed:** 2026-07-29
+**URL:** https://strategybank.smartinvestai.de/
+**Version:** v0.2.34
+**Branch:** `main`

@@ -24,36 +24,39 @@ const EXT_LABELS: Record<string, string> = {
 const LIMIT_MB = Math.ceil(MAX_SOURCE_BYTES / (1024 * 1024));
 
 interface DocumentDropzoneProps {
-  datei: File | null;
-  onChange: (file: File | null, error: string | null) => void;
+  dateien: File[];
+  onChange: (files: File[], error: string | null) => void;
 }
 
-export function MarkdownDropzone({ datei, onChange }: DocumentDropzoneProps) {
+export function MarkdownDropzone({ dateien, onChange }: DocumentDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
 
   useEffect(() => {
-    if (datei === null && inputRef.current) {
+    if (dateien.length === 0 && inputRef.current) {
       inputRef.current.value = "";
     }
-  }, [datei]);
+  }, [dateien]);
 
-  function applyFile(file: File | null | undefined) {
-    if (!file) return;
-    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-    if (!(ext in ALLOWED_EXTENSIONS)) {
-      onChange(null, "Nur .md-, .pdf-, .epub- und .mobi-Dateien werden unterstützt.");
-      return;
+  function applyFiles(files: FileList | File[]) {
+    const selected = Array.from(files);
+    if (selected.length === 0) return;
+    for (const file of selected) {
+      const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+      if (!(ext in ALLOWED_EXTENSIONS)) {
+        onChange([], "Nur .md-, .pdf-, .epub- und .mobi-Dateien werden unterstützt.");
+        return;
+      }
+      if (file.size === 0) {
+        onChange([], "Quelle enthält keinen Inhalt.");
+        return;
+      }
+      if (file.size > MAX_SOURCE_BYTES) {
+        onChange([], `Datei überschreitet das Größenlimit von ${LIMIT_MB} MB.`);
+        return;
+      }
     }
-    if (file.size === 0) {
-      onChange(null, "Quelle enthält keinen Inhalt.");
-      return;
-    }
-    if (file.size > MAX_SOURCE_BYTES) {
-      onChange(null, `Datei überschreitet das Größenlimit von ${LIMIT_MB} MB.`);
-      return;
-    }
-    onChange(file, null);
+    onChange(selected, null);
   }
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {
@@ -61,14 +64,10 @@ export function MarkdownDropzone({ datei, onChange }: DocumentDropzoneProps) {
     setDragActive(false);
     const files = e.dataTransfer.files;
     if (files.length === 0) {
-      onChange(null, "Nur .md-, .pdf-, .epub- und .mobi-Dateien werden unterstützt.");
+      onChange([], "Nur .md-, .pdf-, .epub- und .mobi-Dateien werden unterstützt.");
       return;
     }
-    if (files.length > 1) {
-      onChange(null, "Bitte genau eine Datei ablegen.");
-      return;
-    }
-    applyFile(files[0]);
+    applyFiles(files);
   }
 
   function handleDragOver(e: React.DragEvent<HTMLDivElement>) {
@@ -85,11 +84,6 @@ export function MarkdownDropzone({ datei, onChange }: DocumentDropzoneProps) {
   function openDialog() {
     inputRef.current?.click();
   }
-
-  const fileExt = datei
-    ? datei.name.slice(datei.name.lastIndexOf(".")).toLowerCase()
-    : null;
-  const formatLabel = fileExt && fileExt in EXT_LABELS ? EXT_LABELS[fileExt] : null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -117,20 +111,24 @@ export function MarkdownDropzone({ datei, onChange }: DocumentDropzoneProps) {
       >
         <FileUp className="size-8 text-muted-foreground" aria-hidden="true" />
         <p className="text-sm font-medium">
-          Dokument hier ablegen oder auswählen
+          Dokumente hier ablegen oder auswählen
         </p>
         <p className="text-xs text-muted-foreground">
           .md, .pdf, .epub oder .mobi, maximal {LIMIT_MB} MB.
         </p>
-        {datei && formatLabel && (
+        {dateien.length > 0 && (
           <div className="mt-1 text-xs text-muted-foreground">
-            <p>
-              Ausgewählt: <span className="font-mono">{datei.name}</span>{" "}
-              ({Math.ceil(datei.size / 1024)} KB)
-            </p>
-            <p>
-              Erkanntes Format: <span className="font-medium">{formatLabel}</span>
-            </p>
+            <p>{dateien.length} Dokument{dateien.length === 1 ? "" : "e"} ausgewählt:</p>
+            <ul className="mt-1 space-y-0.5 font-mono">
+              {dateien.map((file) => {
+                const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+                return (
+                  <li key={`${file.name}-${file.lastModified}`}>
+                    {file.name} ({EXT_LABELS[ext] ?? "Dokument"}, {Math.ceil(file.size / 1024)} KB)
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         )}
       </div>
@@ -138,8 +136,9 @@ export function MarkdownDropzone({ datei, onChange }: DocumentDropzoneProps) {
         ref={inputRef}
         type="file"
         accept={ACCEPT}
+        multiple
         onChange={(e) => {
-          applyFile(e.target.files?.[0]);
+          applyFiles(e.target.files ?? []);
           e.target.value = "";
         }}
         className="sr-only"
