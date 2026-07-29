@@ -1,8 +1,8 @@
 # PROJ-7: Ergebnisvergleich
 
-## Status: Deployed
+## Status: In Review
 **Created:** 2026-07-15
-**Last Updated:** 2026-07-15
+**Last Updated:** 2026-07-29
 
 ## Dependencies
 - Requires: PROJ-6 (Queue und trader.dev-Ausführung) — liefert abgeschlossene Run-Ergebnisse.
@@ -11,6 +11,7 @@
 - Als Trader möchte ich Kernmetriken aller Runs in einer Tabelle sehen, um Strategien objektiv zu vergleichen.
 - Als Trader möchte ich nach Strategie, Instrument, Kategorie, Richtung und Status filtern, um gezielt Teilmengen zu betrachten.
 - Als Trader möchte ich Research-, historische Holdout- und echte Forward-Ergebnisse klar getrennt sehen, um keine Holdout-Daten fälschlich als Research-Bestätigung zu lesen.
+- Als Trader möchte ich fehlgeschlagene Runs direkt aus dem Ergebnisvergleich bewusst wiederholen.
 
 ## Acceptance Criteria
 - [ ] Pro erfolgreichem Run werden mindestens angezeigt: Net Return %, CAGR %, Trade Count, Max Drawdown %, Sharpe Ratio, Profit Factor, Calmar Ratio, trader.dev-Report-Link.
@@ -22,6 +23,8 @@
 - [ ] Runs mit unterschiedlichen Backtest-Profilen werden in der UI nicht als gleichwertig nebeneinander dargestellt (z. B. Warnhinweis oder getrennte Gruppierung), sondern erkennbar als nicht direkt vergleichbar markiert.
 - [ ] Kein Composite Score, keine automatische Gewinner-Kennzeichnung wird berechnet oder angezeigt.
 - [ ] Fehlt der Report-Link trotz vorhandener Metriken, bleibt das Ergebnis sichtbar und wird zusätzlich als „unvollständig" markiert.
+- [ ] Die Ergebnis-Kacheln nutzen auf Desktop die verfügbare Breite; auf schmaleren iPad-Ansichten bleibt die Tabelle horizontal scrollbar.
+- [ ] Fehlgeschlagene Runs zeigen rechts „Wiederholen" und verwenden den bestehenden Credit-Gate-Retry aus PROJ-6.
 
 ## Edge Cases
 - Run mit Trade Count 0: Zeile erscheint, alle abgeleiteten Ratios zeigen „nicht verfügbar" statt 0 oder leer ohne Erklärung.
@@ -228,3 +231,11 @@ _Beide während QA gefundenen Bugs wurden direkt behoben:_
 
 ## Deployment
 **Deployed:** 2026-07-15 · **Version:** v0.2.5
+
+## Implementation Notes
+
+**2026-07-29:** Die feste Seitenbegrenzung `max-w-7xl` wurde entfernt, damit
+Filter- und Ergebnis-Kacheln auf Desktop die verfügbare Breite nutzen. Die
+Ergebniszeile bietet bei Status `fehlgeschlagen` nun „Wiederholen"; die Aktion
+verwendet unverändert `GET /runs/{id}/retry-credit-check` und
+`POST /runs/{id}/retry` und lädt anschließend die Ergebnisliste neu.

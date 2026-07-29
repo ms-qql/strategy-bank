@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
-import { apiDelete, apiGet, ApiError } from "@/lib/api-client";
+import { apiDelete, apiGet, apiPost, ApiError } from "@/lib/api-client";
 import {
   resultRowSchema,
   RESULT_TYPE_LABELS,
@@ -39,6 +39,7 @@ import {
   Loader,
   TriangleAlert,
   SearchX,
+  RotateCcw,
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
@@ -60,16 +61,6 @@ const METRIC_FIELDS = [
   "profit_factor",
   "calmar_ratio",
 ] as const;
-
-const METRIC_LABELS: Record<string, string> = {
-  net_profit_pct: "Net Return %",
-  cagr_pct: "CAGR %",
-  trade_count: "Trades",
-  max_drawdown_pct: "Max DD %",
-  sharpe_ratio: "Sharpe",
-  profit_factor: "PF",
-  calmar_ratio: "Calmar",
-};
 
 const DEFAULT_THRESHOLD = 24;
 
@@ -129,6 +120,7 @@ export default function ErgebnissePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingRunId, setDeletingRunId] = useState<string | null>(null);
+  const [retryingRunId, setRetryingRunId] = useState<string | null>(null);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filterStrategy, setFilterStrategy] = useState("");
@@ -196,7 +188,7 @@ export default function ErgebnissePage() {
     if (filterResultType)
       result = result.filter((r) => r.result_type === filterResultType);
     return result;
-  }, [rows, filterStrategy, filterInstrument, filterCategory, filterDirection, filterStatus, filterResultType]);
+  }, [rows, filterStrategy, filterVersion, filterInstrument, filterCategory, filterDirection, filterStatus, filterResultType]);
 
   const sorted = useMemo(() => {
     if (!sort) return filtered;
@@ -254,6 +246,28 @@ export default function ErgebnissePage() {
     }
   };
 
+  const handleRetry = async (runId: string) => {
+    setRetryingRunId(runId);
+    setError(null);
+    try {
+      const check = z
+        .object({ ok: z.boolean(), reason: z.string().nullable().optional() })
+        .parse(await apiGet(`/runs/${runId}/retry-credit-check`));
+      if (!check.ok) {
+        setError(check.reason ?? "Wiederholung ist nicht möglich.");
+        return;
+      }
+      await apiPost(`/runs/${runId}/retry`);
+      setRows(
+        z.array(resultRowSchema).parse(await apiGet<ResultRow[]>("/results")),
+      );
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Run konnte nicht wiederholt werden.");
+    } finally {
+      setRetryingRunId(null);
+    }
+  };
+
   const hasFilters =
     filterStrategy || filterVersion || filterInstrument || filterCategory || filterDirection || filterStatus || filterResultType;
 
@@ -266,7 +280,7 @@ export default function ErgebnissePage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6">
+    <div className="w-full px-4 py-6">
       <Button
         variant="ghost"
         size="sm"
@@ -425,7 +439,9 @@ export default function ErgebnissePage() {
           threshold={threshold}
           isHighlighted={hasMultipleProfiles}
           deletingRunId={deletingRunId}
+          retryingRunId={retryingRunId}
           onDelete={handleDelete}
+          onRetry={handleRetry}
         />
       ))}
     </div>
@@ -474,7 +490,9 @@ function ErgebnisGruppe({
   threshold,
   isHighlighted,
   deletingRunId,
+  retryingRunId,
   onDelete,
+  onRetry,
 }: {
   rows: ResultRow[];
   groupLabel: string;
@@ -483,7 +501,9 @@ function ErgebnisGruppe({
   threshold: number;
   isHighlighted: boolean;
   deletingRunId: string | null;
+  retryingRunId: string | null;
   onDelete: (runId: string) => void;
+  onRetry: (runId: string) => void;
 }) {
   const activeThreshold = threshold;
 
@@ -551,7 +571,7 @@ function ErgebnisGruppe({
           </TableHeader>
           <TableBody>
             {rows.map((r) => (
-              <ErgebnisZeile key={r.run_id} row={r} threshold={activeThreshold} deletingRunId={deletingRunId} onDelete={onDelete} />
+              <ErgebnisZeile key={r.run_id} row={r} threshold={activeThreshold} deletingRunId={deletingRunId} retryingRunId={retryingRunId} onDelete={onDelete} onRetry={onRetry} />
             ))}
           </TableBody>
         </Table>
@@ -564,18 +584,19 @@ function ErgebnisZeile({
   row,
   threshold,
   deletingRunId,
+  retryingRunId,
   onDelete,
+  onRetry,
 }: {
   row: ResultRow;
   threshold: number;
   deletingRunId: string | null;
+  retryingRunId: string | null;
   onDelete: (runId: string) => void;
+  onRetry: (runId: string) => void;
 }) {
   const isLowActivity = row.trade_count !== null && row.trade_count < threshold;
   const hasReport = !!row.report_link;
-  const isCompleted = ["erfolgreich", "fehlgeschlagen", "abgebrochen"].includes(
-    row.status,
-  );
   const hasMetrics =
     row.net_profit_pct !== null || row.trade_count !== null;
 
@@ -655,8 +676,23 @@ function ErgebnisZeile({
               <ExternalLink className="h-3 w-3" />
             </a>
           )}
+          {row.status === "fehlgeschlagen" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onRetry(row.run_id)}
+              disabled={retryingRunId === row.run_id || deletingRunId === row.run_id}
+            >
+              {retryingRunId === row.run_id ? (
+                <Loader className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <RotateCcw className="mr-1 h-3 w-3" />
+              )}
+              Wiederholen
+            </Button>
+          )}
           {row.status !== "läuft" && (
-            <Button variant="ghost" size="sm" onClick={() => onDelete(row.run_id)} disabled={deletingRunId === row.run_id}>
+            <Button variant="ghost" size="sm" onClick={() => onDelete(row.run_id)} disabled={deletingRunId === row.run_id || retryingRunId === row.run_id}>
               {deletingRunId === row.run_id ? <Loader className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
             </Button>
           )}
