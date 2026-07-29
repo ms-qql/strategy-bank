@@ -67,8 +67,9 @@ Aus einer Text-/Markdown-Quelle mindestens eine Strategie extrahieren, verifizie
 | PROJ-17 | Instrumente pro Batch aktivieren oder ausblenden | P0 |
 | PROJ-18 | Einfachauswahl für den Richtungsmodus | P0 |
 | PROJ-19 | Hal-Vault-Sync für Quellen + Feldbereinigung | P1 |
+| PROJ-20 | PDF, EPUB und MOBI als Markdown importieren | P1 |
 
-Empfohlene nächste Umsetzung: PROJ-18 → PROJ-17 → PROJ-14 → PROJ-15 → PROJ-16. PROJ-13 verbleibt bis zur End-to-End-Verifikation in Review.
+Empfohlene nächste Umsetzung: PROJ-20 → PROJ-15 → PROJ-16. PROJ-13 verbleibt bis zur End-to-End-Verifikation in Review.
 
 ## 8. Erfolgsmetriken
 
@@ -85,7 +86,7 @@ Empfohlene nächste Umsetzung: PROJ-18 → PROJ-17 → PROJ-14 → PROJ-15 → P
 
 ## 10. Non-Goals (MVP)
 
-- PDF/OCR/Screenshot-Quellen, Web-Links, Multi-Upload.
+- OCR für Scan-PDFs und Screenshots, Web-Links, Multi-Upload.
 - Stop-Loss/Take-Profit/Trailing-Stops, Portfolio-Optimierung, Parameter-Sweeps.
 - Automatische kontinuierliche Crypto-MTS-Forecast-Transformation und Forecast-Backtests; im MVP wird nur die Eignung bewertet und die diskrete Abbildung `+10 / 0 / −10` definiert.
 - Composite Score, automatische Gewinner-Empfehlung.
