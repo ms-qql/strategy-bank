@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     extraction_prompt_version: str = "v1"
     extraction_timeout_seconds: float = 60.0
 
-    source_max_bytes: int = 2 * 1024 * 1024  # 2 MB, siehe PROJ-1 Edge Cases
+    source_max_bytes: int = 25 * 1024 * 1024  # 25 MB, siehe PROJ-20
 
     # CORS: Dev-Default fürs Next.js-Frontend (Port 3000). Prod via .env
     # überschreiben (CSV-String, z. B. "https://app.example.com,https://www.example.com").

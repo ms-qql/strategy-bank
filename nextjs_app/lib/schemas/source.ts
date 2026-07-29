@@ -1,9 +1,15 @@
 import { z } from "zod";
 
-// Max. Quellgröße (Default lt. Spec 2 MB). Client-Vorprüfung; Backend prüft verbindlich.
-export const MAX_SOURCE_BYTES = 2 * 1024 * 1024;
+// Max. Quellgröße (PROJ-20: 25 MB für Dokumentimport).
+export const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 
-export const sourceTypeSchema = z.enum(["text", "markdown_file"]);
+export const sourceTypeSchema = z.enum([
+  "text",
+  "markdown_file",
+  "pdf_file",
+  "epub_file",
+  "mobi_file",
+]);
 export type SourceType = z.infer<typeof sourceTypeSchema>;
 
 // Antwortform von GET /sources und POST /sources.

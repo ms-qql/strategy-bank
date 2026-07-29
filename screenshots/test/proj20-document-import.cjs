@@ -3,7 +3,7 @@ const { chromium } = require("/home/dev/.local/lib/node_modules/playwright");
 
 const URL = "http://127.0.0.1:3120/quellen";
 const SCREENSHOT =
-  "/home/dev/projects/crypto/strategy_bank/screenshots/test/proj20-source-row-no-filename.png";
+  "/home/dev/projects/crypto/strategy_bank/screenshots/test/proj20-source-row-fixed.png";
 
 const results = [];
 const expectedFailures = [];
@@ -109,12 +109,16 @@ async function select(page, name, mimeType = "application/octet-stream") {
 
   const tableText = await page.locator("table").innerText();
   check("Originalformat in Quellenliste", tableText.includes("EPUB-E-Book"));
-  if (!tableText.includes("book.epub")) {
-    expectedFailures.push({
-      label: "BUG-2: Originaldateiname fehlt in der Quellenliste",
-      detail: "API liefert filename=book.epub, die Tabelle rendert ihn nicht.",
-    });
-  }
+  check("Originaldateiname in Quellenliste", tableText.includes("book.epub"));
+  check(
+    "Seitenuntertitel nennt Dokumentformate",
+    (
+      await page
+        .getByRole("heading", { name: "Quellenerfassung" })
+        .locator("..")
+        .innerText()
+    ).includes("PDF, EPUB oder MOBI"),
+  );
   await page.screenshot({ path: SCREENSHOT, fullPage: true });
 
   for (const width of [375, 768, 1440]) {

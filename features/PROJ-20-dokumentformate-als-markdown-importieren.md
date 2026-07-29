@@ -1,6 +1,6 @@
 # PROJ-20: PDF, EPUB und MOBI als Markdown importieren
 
-## Status: In Review
+## Status: Approved
 **Created:** 2026-07-29
 **Last Updated:** 2026-07-29
 
@@ -235,7 +235,6 @@ noch verwaiste Extraktionsläufe entstehen.
 - [x] Tastaturbedienung und sichtbarer Fokus der bestehenden Dropzone bleiben erhalten.
 - [ ] **BUG-6:** Der Seitenuntertitel lautet weiterhin
   „Strategiebeschreibungen als Text oder Markdown-Datei erfassen.“
-- Screenshot: `screenshots/test/proj20-source-row-no-filename.png`
 
 ### Security Audit Results
 
@@ -269,7 +268,6 @@ noch verwaiste Extraktionsläufe entstehen.
   1. `book.epub` erfolgreich importieren.
   2. Erwartet: Originalformat und `book.epub` bleiben sichtbar.
   3. Tatsächlich: Die Tabelle zeigt nur „EPUB-E-Book“.
-- **Screenshot:** `screenshots/test/proj20-source-row-no-filename.png`
 - **Priority:** Fix before deployment.
 
 #### BUG-3: Keine Grenze für entpackten oder konvertierten Inhalt
@@ -316,7 +314,7 @@ noch verwaiste Extraktionsläufe entstehen.
 - **Frontend:** Production Build grün; ESLint der geänderten Dateien grün.
 - **Browser:** 15 bestanden, 1 dokumentierter erwarteter Befund (BUG-2).
 
-### Summary
+### Summary (Erstlauf)
 
 - **Acceptance Criteria:** 9/12 vollständig bestanden.
 - **Bugs Found:** 6 total (0 Critical, 2 High, 3 Medium, 1 Low).
@@ -324,6 +322,29 @@ noch verwaiste Extraktionsläufe entstehen.
 - **Production Ready:** **NO**.
 - **Recommendation:** BUG-1 und BUG-3 zuerst beheben; danach BUG-2, BUG-4 und
   BUG-5 vor erneuter QA. BUG-6 kann separat kosmetisch korrigiert werden.
+
+### Re-QA nach Fehlerbehebung
+
+**Getestet:** 2026-07-29
+
+- [x] **BUG-1 behoben:** MOBI wird in einem eigenen temporären Verzeichnis
+  entpackt; EPUB-, HTML- und PDF-Ausgaben der Bibliothek werden unterstützt.
+- [x] **BUG-2 behoben:** Originaldateiname erscheint unter dem Quelltyp in der Tabelle.
+- [x] **BUG-3 behoben:** EPUB-Archive und erzeugtes Markdown besitzen feste
+  Obergrenzen; übergroße Inhalte werden vor Persistenz abgelehnt.
+- [x] **BUG-4 behoben:** Verschlüsselte EPUB-Inhaltsdokumente werden anhand der
+  Schutzmetadaten erkannt und abgelehnt.
+- [x] **BUG-5 behoben:** `TemporaryDirectory` entfernt MOBI-Artefakte bei Erfolg
+  und Fehler automatisch.
+- [x] **BUG-6 behoben:** Der Seitenuntertitel nennt Text, Markdown, PDF, EPUB und MOBI.
+- [x] PROJ-20 gezielt: **31/31 Tests bestanden**.
+- [x] Backend vollständig: **257/257 Tests bestanden**.
+- [x] Frontend: Production Build und ESLint der betroffenen Dateien bestanden.
+- [x] Browser: **17/17 Smokes bestanden**, keine erwarteten Fehler.
+- Screenshot: `screenshots/test/proj20-source-row-fixed.png`
+- **Acceptance Criteria:** **12/12 bestanden**.
+- **Security:** Bestanden; Dekompressions-/Ausgabelimit und Temp-Cleanup verifiziert.
+- **Production Ready:** **YES**.
 
 ## Deployment
 _To be added by /abc-deploy_

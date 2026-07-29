@@ -6,8 +6,27 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from ..config import settings
 from ..db import run_command, run_query, run_query_one
 from ..schemas.sources import SourceDetail, SourceListItem
+from ..services.document_converter import convert_to_markdown
 
 router = APIRouter(prefix="/sources", tags=["sources"])
+
+ALLOWED_EXTENSIONS = {".md", ".pdf", ".epub", ".mobi"}
+
+EXT_TO_SOURCE_TYPE = {
+    ".md": "markdown_file",
+    ".pdf": "pdf_file",
+    ".epub": "epub_file",
+    ".mobi": "mobi_file",
+}
+
+DOCUMENT_TYPES = {"pdf_file", "epub_file", "mobi_file"}
+
+
+def _ext_lower(filename: str) -> str:
+    dot = filename.rfind(".")
+    if dot == -1:
+        return ""
+    return filename[dot:].lower()
 
 
 @router.post("", response_model=SourceDetail, status_code=201)
@@ -25,10 +44,11 @@ async def create_source(
 
     if has_file:
         assert file is not None
-        if not file.filename.lower().endswith(".md"):
-            raise HTTPException(400, "Nur .md-Dateien werden als Datei-Upload unterstützt.")
+        ext = _ext_lower(file.filename)
+        if ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(400, "Nur .md-, .pdf-, .epub- und .mobi-Dateien werden unterstützt.")
         raw_bytes = await file.read()
-        source_type = "markdown_file"
+        source_type = EXT_TO_SOURCE_TYPE[ext]
         file_name = file.filename
     else:
         assert content is not None
@@ -40,10 +60,18 @@ async def create_source(
         limit_mb = settings.source_max_bytes // (1024 * 1024)
         raise HTTPException(400, f"Datei überschreitet das Größenlimit von {limit_mb} MB.")
 
-    try:
+    if source_type in DOCUMENT_TYPES:
+        try:
+            text = convert_to_markdown(raw_bytes, source_type)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    elif source_type == "markdown_file":
+        try:
+            text = raw_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            raise HTTPException(400, "Datei konnte nicht als Text gelesen werden.")
+    else:
         text = raw_bytes.decode("utf-8")
-    except UnicodeDecodeError:
-        raise HTTPException(400, "Datei konnte nicht als Text gelesen werden.")
 
     if not text.strip():
         raise HTTPException(400, "Quelle enthält keinen Inhalt.")

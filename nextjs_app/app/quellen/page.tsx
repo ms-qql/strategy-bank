@@ -6,7 +6,7 @@ export default function QuellenPage() {
       <header className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Quellenerfassung</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Strategiebeschreibungen als Text oder Markdown-Datei erfassen.
+          Strategiebeschreibungen als Text, Markdown, PDF, EPUB oder MOBI erfassen.
         </p>
       </header>
       <QuellenView />

@@ -3,23 +3,35 @@
 import { useEffect, useRef, useState } from "react";
 import { FileUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MAX_SOURCE_BYTES } from "@/lib/schemas/source";
+import { MAX_SOURCE_BYTES, type SourceType } from "@/lib/schemas/source";
 
-const ACCEPT = ".md,text/markdown";
+const ALLOWED_EXTENSIONS: Record<string, SourceType> = {
+  ".md": "markdown_file",
+  ".pdf": "pdf_file",
+  ".epub": "epub_file",
+  ".mobi": "mobi_file",
+};
 
-export type MarkdownDropzoneError = string | null;
+const ACCEPT = ".md,.pdf,.epub,.mobi";
 
-interface MarkdownDropzoneProps {
+const EXT_LABELS: Record<string, string> = {
+  ".md": "Markdown-Datei",
+  ".pdf": "PDF-Dokument",
+  ".epub": "EPUB-E-Book",
+  ".mobi": "MOBI-E-Book",
+};
+
+const LIMIT_MB = Math.ceil(MAX_SOURCE_BYTES / (1024 * 1024));
+
+interface DocumentDropzoneProps {
   datei: File | null;
-  onChange: (file: File | null, error: MarkdownDropzoneError) => void;
+  onChange: (file: File | null, error: string | null) => void;
 }
 
-export function MarkdownDropzone({ datei, onChange }: MarkdownDropzoneProps) {
+export function MarkdownDropzone({ datei, onChange }: DocumentDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
 
-  // ponytail: parent setzt datei auf null nach erfolgreichem Speichern.
-  // Eigenen Input-Wert leeren, damit dieselbe Datei erneut ausgewählt werden darf.
   useEffect(() => {
     if (datei === null && inputRef.current) {
       inputRef.current.value = "";
@@ -28,8 +40,9 @@ export function MarkdownDropzone({ datei, onChange }: MarkdownDropzoneProps) {
 
   function applyFile(file: File | null | undefined) {
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".md")) {
-      onChange(null, "Nur .md-Dateien werden unterstützt.");
+    const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
+    if (!(ext in ALLOWED_EXTENSIONS)) {
+      onChange(null, "Nur .md-, .pdf-, .epub- und .mobi-Dateien werden unterstützt.");
       return;
     }
     if (file.size === 0) {
@@ -37,7 +50,7 @@ export function MarkdownDropzone({ datei, onChange }: MarkdownDropzoneProps) {
       return;
     }
     if (file.size > MAX_SOURCE_BYTES) {
-      onChange(null, "Datei überschreitet das Größenlimit von 2 MB.");
+      onChange(null, `Datei überschreitet das Größenlimit von ${LIMIT_MB} MB.`);
       return;
     }
     onChange(file, null);
@@ -48,12 +61,11 @@ export function MarkdownDropzone({ datei, onChange }: MarkdownDropzoneProps) {
     setDragActive(false);
     const files = e.dataTransfer.files;
     if (files.length === 0) {
-      // abgelegter Ordner oder nicht-Datei-Drop → wie ungültige Datei behandeln
-      onChange(null, "Nur .md-Dateien werden unterstützt.");
+      onChange(null, "Nur .md-, .pdf-, .epub- und .mobi-Dateien werden unterstützt.");
       return;
     }
     if (files.length > 1) {
-      onChange(null, "Bitte genau eine Markdown-Datei ablegen.");
+      onChange(null, "Bitte genau eine Datei ablegen.");
       return;
     }
     applyFile(files[0]);
@@ -74,12 +86,17 @@ export function MarkdownDropzone({ datei, onChange }: MarkdownDropzoneProps) {
     inputRef.current?.click();
   }
 
+  const fileExt = datei
+    ? datei.name.slice(datei.name.lastIndexOf(".")).toLowerCase()
+    : null;
+  const formatLabel = fileExt && fileExt in EXT_LABELS ? EXT_LABELS[fileExt] : null;
+
   return (
     <div className="flex flex-col gap-2">
       <div
         role="button"
         tabIndex={0}
-        aria-label="Markdown-Datei hier ablegen oder auswählen"
+        aria-label="Dokument hier ablegen oder auswählen"
         onClick={openDialog}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -98,21 +115,23 @@ export function MarkdownDropzone({ datei, onChange }: MarkdownDropzoneProps) {
           "data-[drag-active=true]:border-primary data-[drag-active=true]:bg-primary/10",
         )}
       >
-        <FileUp
-          className="size-8 text-muted-foreground"
-          aria-hidden="true"
-        />
+        <FileUp className="size-8 text-muted-foreground" aria-hidden="true" />
         <p className="text-sm font-medium">
-          Markdown-Datei hier ablegen oder auswählen
+          Dokument hier ablegen oder auswählen
         </p>
         <p className="text-xs text-muted-foreground">
-          Genau eine .md-Datei, maximal 2 MB.
+          .md, .pdf, .epub oder .mobi, maximal {LIMIT_MB} MB.
         </p>
-        {datei && (
-          <p className="mt-1 text-xs text-muted-foreground">
-            Ausgewählt: <span className="font-mono">{datei.name}</span>{" "}
-            ({Math.ceil(datei.size / 1024)} KB)
-          </p>
+        {datei && formatLabel && (
+          <div className="mt-1 text-xs text-muted-foreground">
+            <p>
+              Ausgewählt: <span className="font-mono">{datei.name}</span>{" "}
+              ({Math.ceil(datei.size / 1024)} KB)
+            </p>
+            <p>
+              Erkanntes Format: <span className="font-medium">{formatLabel}</span>
+            </p>
+          </div>
         )}
       </div>
       <input

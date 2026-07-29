@@ -5,10 +5,10 @@ import { ChevronDown, ChevronRight, Loader } from "lucide-react";
 import { z } from "zod";
 import { apiGet, apiPostForm, apiUrl, ApiError } from "@/lib/api-client";
 import {
-  MAX_SOURCE_BYTES,
   sourceListSchema,
   sourceSchema,
   type Source,
+  type SourceType,
 } from "@/lib/schemas/source";
 import {
   extractionRunDetailSchema,
@@ -41,9 +41,12 @@ import { ExtrahierenButton } from "./extrahieren-button";
 import { EntwurfCard } from "./entwurf-card";
 import { MarkdownDropzone } from "./markdown-dropzone";
 
-const TYP_LABEL: Record<Source["source_type"], string> = {
+const TYP_LABEL: Record<SourceType, string> = {
   text: "Text",
   markdown_file: "Markdown-Datei",
+  pdf_file: "PDF-Dokument",
+  epub_file: "EPUB-E-Book",
+  mobi_file: "MOBI-E-Book",
 };
 
 const STATUS_VARIANT: Record<
@@ -79,7 +82,7 @@ export function QuellenView() {
   const [ladeliste, setLadeliste] = useState(true);
   const [listenfehler, setListenfehler] = useState<string | null>(null);
 
-  const [tab, setTab] = useState<Source["source_type"]>("text");
+  const [tab, setTab] = useState<"text" | "file">("text");
   const [text, setText] = useState("");
   const [datei, setDatei] = useState<File | null>(null);
   const [absenden, setAbsenden] = useState(false);
@@ -287,7 +290,6 @@ export function QuellenView() {
     setFehler(null);
 
     const form = new FormData();
-    form.set("source_type", tab);
 
     if (tab === "text") {
       if (text.trim().length === 0) {
@@ -297,19 +299,7 @@ export function QuellenView() {
       form.set("content", text);
     } else {
       if (!datei) {
-        setFehler("Bitte eine Markdown-Datei (.md) auswählen.");
-        return;
-      }
-      if (!datei.name.toLowerCase().endsWith(".md")) {
-        setFehler("Nur .md-Dateien werden als Datei-Upload unterstützt.");
-        return;
-      }
-      if (datei.size === 0) {
-        setFehler("Quelle enthält keinen Inhalt.");
-        return;
-      }
-      if (datei.size > MAX_SOURCE_BYTES) {
-        setFehler("Datei überschreitet das Größenlimit von 2 MB.");
+        setFehler("Bitte eine Datei (.md, .pdf, .epub oder .mobi) auswählen.");
         return;
       }
       form.set("file", datei);
@@ -337,7 +327,7 @@ export function QuellenView() {
           <CardTitle>Quelle erfassen</CardTitle>
           <CardDescription>
             Genau eine Quelle je Vorgang: eingefügter Klartext oder eine
-            hochgeladene <code>.md</code>-Datei.
+            hochgeladene .md-, .pdf-, .epub- oder .mobi-Datei.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -345,13 +335,13 @@ export function QuellenView() {
             <Tabs
               value={tab}
               onValueChange={(v) => {
-                setTab(v as Source["source_type"]);
+                setTab(v as "text" | "file");
                 setFehler(null);
               }}
             >
               <TabsList>
                 <TabsTrigger value="text">Text einfügen</TabsTrigger>
-                <TabsTrigger value="markdown_file">Markdown-Datei</TabsTrigger>
+                <TabsTrigger value="file">Dokument importieren</TabsTrigger>
               </TabsList>
 
               <TabsContent value="text" className="pt-2">
@@ -368,7 +358,7 @@ export function QuellenView() {
                 />
               </TabsContent>
 
-              <TabsContent value="markdown_file" className="pt-2">
+              <TabsContent value="file" className="pt-2">
                 <MarkdownDropzone datei={datei} onChange={handleDateiChange} />
               </TabsContent>
             </Tabs>
@@ -381,7 +371,11 @@ export function QuellenView() {
 
             <div>
               <Button type="submit" disabled={absenden}>
-                {absenden ? "Speichern …" : "Quelle speichern"}
+                {absenden
+                  ? tab === "file"
+                    ? "Dokument wird umgewandelt …"
+                    : "Speichern …"
+                  : "Quelle speichern"}
               </Button>
             </div>
           </form>
@@ -461,7 +455,14 @@ export function QuellenView() {
                         <TableCell className="font-mono text-xs">
                           {s.source_hash.slice(0, 12)}
                         </TableCell>
-                        <TableCell>{TYP_LABEL[s.source_type]}</TableCell>
+                        <TableCell>
+                          <div>{TYP_LABEL[s.source_type]}</div>
+                          {s.filename && (
+                            <div className="max-w-56 truncate font-mono text-xs text-muted-foreground">
+                              {s.filename}
+                            </div>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <span className="inline-flex items-center gap-1.5">
                             {isRunning && (

@@ -1,6 +1,8 @@
 """PROJ-20: echte Konverterpfade ohne gemockte Drittanbietergrenzen."""
 
 import io
+import os
+import zipfile
 
 import pytest
 from ebooklib import epub
@@ -28,6 +30,43 @@ def _epub_bytes() -> bytes:
     book.spine = ["nav", chapter]
     output = io.BytesIO()
     epub.write_epub(output, book)
+    return output.getvalue()
+
+
+def _epub_with_content(content: bytes) -> bytes:
+    book = epub.EpubBook()
+    book.set_identifier("proj-20-sized-test")
+    book.set_title("Testbuch")
+    book.set_language("de")
+    chapter = epub.EpubHtml(title="Kapitel", file_name="kapitel.xhtml", lang="de")
+    chapter.content = content
+    book.add_item(chapter)
+    book.add_item(epub.EpubNcx())
+    book.add_item(epub.EpubNav())
+    book.spine = ["nav", chapter]
+    output = io.BytesIO()
+    epub.write_epub(output, book)
+    return output.getvalue()
+
+
+def _protected_epub_bytes() -> bytes:
+    source = zipfile.ZipFile(io.BytesIO(_epub_bytes()))
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as protected:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename.endswith("kapitel.xhtml"):
+                data = b"\xff\xfe\x00encrypted"
+            protected.writestr(item, data)
+        protected.writestr(
+            "META-INF/encryption.xml",
+            """<?xml version="1.0"?>
+            <encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+              <EncryptedData>
+                <CipherData><CipherReference URI="EPUB/kapitel.xhtml"/></CipherData>
+              </EncryptedData>
+            </encryption>""",
+        )
     return output.getvalue()
 
 
@@ -107,16 +146,46 @@ def test_broken_epub_is_rejected():
         dc.convert_to_markdown(b"not-an-epub", "epub_file")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="BUG-1: mobi.extract liefert (tempdir, dateipfad), der Konverter erwartet einen Pfad",
-)
-def test_mobi_uses_library_return_contract(monkeypatch, tmp_path):
-    extracted_dir = tmp_path / "extracted"
-    extracted_dir.mkdir()
-    epub_path = extracted_dir / "book.epub"
-    epub_path.write_bytes(_epub_bytes())
-    monkeypatch.setattr("mobi.extract", lambda _: (str(extracted_dir), str(epub_path)))
+def test_protected_epub_is_rejected():
+    with pytest.raises(ValueError, match="Geschützte Dokumente"):
+        dc.convert_to_markdown(_protected_epub_bytes(), "epub_file")
+
+
+def test_epub_expanded_content_is_bounded(monkeypatch):
+    monkeypatch.setattr(dc, "MAX_CONVERTED_BYTES", 1024, raising=False)
+    raw = _epub_with_content(b"<p>" + b"A" * 2048 + b"</p>")
+
+    with pytest.raises(ValueError, match="zu groß"):
+        dc.convert_to_markdown(raw, "epub_file")
+
+
+def test_mobi_epub_output_is_converted_and_tempdir_removed(monkeypatch):
+    extracted_dirs = []
+
+    def fake_unpack(infile, outdir, epubver):
+        extracted_dirs.append(outdir)
+        epub_dir = os.path.join(outdir, "mobi8")
+        os.makedirs(epub_dir)
+        stem = os.path.splitext(os.path.basename(infile))[0]
+        with open(os.path.join(epub_dir, stem + ".epub"), "wb") as result:
+            result.write(_epub_bytes())
+
+    monkeypatch.setattr("mobi.kindleunpack.unpackBook", fake_unpack)
+
+    markdown = dc.convert_to_markdown(b"mobi", "mobi_file")
+
+    assert "# Momentum" in markdown
+    assert extracted_dirs and not os.path.exists(extracted_dirs[0])
+
+
+def test_mobi_html_fallback_is_converted(monkeypatch):
+    def fake_unpack(infile, outdir, epubver):
+        html_dir = os.path.join(outdir, "mobi7")
+        os.makedirs(html_dir)
+        with open(os.path.join(html_dir, "book.html"), "w", encoding="utf-8") as result:
+            result.write("<h1>Momentum</h1><p>Kaufe beim Ausbruch.</p>")
+
+    monkeypatch.setattr("mobi.kindleunpack.unpackBook", fake_unpack)
 
     markdown = dc.convert_to_markdown(b"mobi", "mobi_file")
 

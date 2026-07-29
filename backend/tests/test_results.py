@@ -273,5 +273,5 @@ class TestResultsWithData:
         rows = resp.json()
         batch_run_ids = {str(r["id"]) for r in runs}
         batch_rows = [row for row in rows if row["run_id"] in batch_run_ids]
-        assert len(batch_rows) == 3
+        assert len(batch_rows) == len(runs)
         assert all(r["result_type"] == "standard" for r in batch_rows)
