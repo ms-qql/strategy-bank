@@ -2,7 +2,7 @@
 
 **Status:** MVP-Spezifikation abgeschlossen
 **Erstellt:** 2026-07-15
-**Basis:** `docs/Brainstorm-strategy-bank-v2.md`, `docs/Brainstorm-strategy-bank-review.md`, `docs/Brainstorm-entry-exit-modell.md`, `docs/trader-dev-capability-spike.md`
+**Basis:** `docs/Brainstorm-strategy-bank-v2.md`, `docs/Brainstorm-strategy-bank-review.md`, `docs/Brainstorm-entry-exit-modell.md`, `docs/Brainstorm-strategy-analyse-und-robustheit.md`, `docs/trader-dev-capability-spike.md`
 
 ## 1. Vision
 
@@ -68,8 +68,13 @@ Aus einer Text-/Markdown-Quelle mindestens eine Strategie extrahieren, verifizie
 | PROJ-18 | Einfachauswahl für den Richtungsmodus | P0 |
 | PROJ-19 | Hal-Vault-Sync für Quellen + Feldbereinigung | P1 |
 | PROJ-20 | PDF, EPUB und MOBI als Markdown importieren | P1 |
+| PROJ-21 | HAL-Import und Ergebnis-Screening | P0 |
+| PROJ-22 | Regime-Analyse | P1 |
+| PROJ-23 | Erfolgsfaktorenanalyse | P1 |
+| PROJ-24 | Robustheitslabor | P2 |
+| PROJ-25 | Crypto-MTS-Forecast-Varianten | P3 |
 
-Empfohlene nächste Umsetzung: PROJ-20 → PROJ-15 → PROJ-16. PROJ-13 verbleibt bis zur End-to-End-Verifikation in Review.
+Empfohlene nächste Umsetzung: PROJ-21 → PROJ-22 → PROJ-23 → PROJ-24 → PROJ-25. PROJ-15 und PROJ-16 bleiben unabhängige UI-Backlogpunkte; PROJ-13 verbleibt bis zur End-to-End-Verifikation in Review.
 
 ## 8. Erfolgsmetriken
 
@@ -77,6 +82,8 @@ Empfohlene nächste Umsetzung: PROJ-20 → PROJ-15 → PROJ-16. PROJ-13 verbleib
 - Ein bestätigter Batch wird vollständig aus der App über trader.dev ausgeführt, ohne separaten Terminal-Befehl oder manuellen Worker-Start.
 - Jedes Ergebnis ist auf Strategieversion, Backtest-Profil und trader.dev-Report zurückführbar (Audit-Trail vollständig, stichprobenartig geprüft).
 - Keine cascade-exit-fehlerhaften Ergebnisse werden ungefiltert als gültig angezeigt.
+- Rund 300 importierte HAL-Ergebnisse lassen sich in höchstens fünf Minuten anhand transparenter Einzelmetriken, Erfolgsgruppe und manueller Shortlist eingrenzen.
+- Regime-, Erfolgsfaktoren- und Robustheitsaussagen zeigen stets Datenabdeckung beziehungsweise Zähler und Nenner und behaupten keine Kausalität.
 
 ## 9. Constraints
 
@@ -87,8 +94,9 @@ Empfohlene nächste Umsetzung: PROJ-20 → PROJ-15 → PROJ-16. PROJ-13 verbleib
 ## 10. Non-Goals (MVP)
 
 - OCR für Scan-PDFs und Screenshots, Web-Links, Multi-Upload.
-- Stop-Loss/Take-Profit/Trailing-Stops, Portfolio-Optimierung, Parameter-Sweeps.
-- Automatische kontinuierliche Crypto-MTS-Forecast-Transformation und Forecast-Backtests; im MVP wird nur die Eignung bewertet und die diskrete Abbildung `+10 / 0 / −10` definiert.
+- Stop-Loss/Take-Profit/Trailing-Stops und Portfolio-Optimierung.
+- Automatische Parameteroptimierung; PROJ-24 verarbeitet nur explizit gewählte, extern getestete Robustheitsvarianten.
+- Automatische kontinuierliche Crypto-MTS-Forecast-Transformation; PROJ-25 verlangt eine bestätigte Rohwertregel und externe Tests.
 - Composite Score, automatische Gewinner-Empfehlung.
 - Automatischer Provider-/Modell-Fallback, zweiter Agent-Provider.
 - Automatische Hal-Synchronisierung (nur lokaler Markdown-Export im MVP).
