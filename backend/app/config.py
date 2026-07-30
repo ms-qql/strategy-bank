@@ -15,7 +15,9 @@ class Settings(BaseSettings):
     trader_dev_api_key: str = ""
     extraction_model: str = "opencode-go/deepseek-v4-flash"
     extraction_prompt_version: str = "v1"
-    extraction_timeout_seconds: float = 60.0
+    # 60s war zu knapp für umfangreiche Quellen (mehrere Strategien/Datei) und
+    # ließ ~50% der Extraktionen per subprocess.TimeoutExpired fehlschlagen.
+    extraction_timeout_seconds: float = 180.0
 
     source_max_bytes: int = 25 * 1024 * 1024  # 25 MB, siehe PROJ-20
 

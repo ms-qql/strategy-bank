@@ -266,6 +266,21 @@ def _normalize_strategy(raw: dict) -> dict:
     }
 
 
+def _user_facing_error(exc: Exception) -> str:
+    # Nur für Exception-Typen, die per Konstruktion nie rohen Provider-Output
+    # (stderr/Fehlertext, ggf. mit Secrets) enthalten, geben wir einen
+    # spezifischeren Hinweis. Alles andere bleibt generisch (Secret-Schutz,
+    # siehe test_execute_extraction_hides_provider_error_details).
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return (
+            f"Zeitüberschreitung nach {settings.extraction_timeout_seconds:.0f}s. "
+            "Quelle vermutlich zu umfangreich — bitte erneut versuchen."
+        )
+    if isinstance(exc, ValueError):
+        return "Modellantwort war kein gültiges JSON. Bitte erneut versuchen."
+    return "Extraktion konnte nicht abgeschlossen werden."
+
+
 def _mark_failed(run_id: UUID, source_id: UUID, exc: Exception, stage: str) -> None:
     logger.error(
         "Extraction failed run_id=%s source_id=%s stage=%s error_type=%s",
@@ -277,7 +292,7 @@ def _mark_failed(run_id: UUID, source_id: UUID, exc: Exception, stage: str) -> N
     try:
         run_command(
             "UPDATE extraction_runs SET status = 'fehlgeschlagen', finished_at = %s, error_message = %s WHERE id = %s",
-            [datetime.now(timezone.utc), "Extraktion konnte nicht abgeschlossen werden.", run_id],
+            [datetime.now(timezone.utc), _user_facing_error(exc), run_id],
         )
     except Exception:
         logger.exception("_mark_failed: extraction_runs-Update fehlgeschlagen für run_id=%s", run_id)
