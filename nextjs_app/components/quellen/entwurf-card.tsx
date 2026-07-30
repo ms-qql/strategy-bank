@@ -2,8 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { TriangleAlert, BookOpen, Pencil, Trash2 } from "lucide-react";
-import { apiDelete, ApiError } from "@/lib/api-client";
+import { TriangleAlert, BookOpen, Pencil, Trash2, Download } from "lucide-react";
+import { apiDelete, apiUrl, ApiError } from "@/lib/api-client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -76,6 +76,27 @@ interface Props {
 export function EntwurfCard({ draft }: Props) {
   const router = useRouter();
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  const downloadSteckbrief = async () => {
+    setDownloadError(null);
+    try {
+      const res = await fetch(apiUrl(`/hal/drafts/${draft.id}/export`));
+      if (!res.ok) throw new Error("Download fehlgeschlagen.");
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const filenameMatch = disposition.match(/filename=(.+)$/);
+      const filename = filenameMatch ? filenameMatch[1] : `${draft.name}.md`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setDownloadError(e instanceof Error ? e.message : "Download fehlgeschlagen.");
+    }
+  };
 
   const deleteDraft = async () => {
     if (!confirm(`Entwurf „${draft.name}“ wirklich löschen?`)) return;
@@ -103,6 +124,15 @@ export function EntwurfCard({ draft }: Props) {
           <Button
             variant="outline"
             size="sm"
+            onClick={downloadSteckbrief}
+            aria-label={`Steckbrief ${draft.name} herunterladen`}
+          >
+            <Download className="mr-1 h-3.5 w-3.5" />
+            Steckbrief
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => router.push(`/entwuerfe/${draft.id}`)}
           >
             <Pencil className="mr-1 h-3.5 w-3.5" />
@@ -119,6 +149,12 @@ export function EntwurfCard({ draft }: Props) {
       {deleteError && (
         <Alert variant="destructive" className="mt-3">
           <AlertDescription>{deleteError}</AlertDescription>
+        </Alert>
+      )}
+
+      {downloadError && (
+        <Alert variant="destructive" className="mt-3">
+          <AlertDescription>{downloadError}</AlertDescription>
         </Alert>
       )}
 
