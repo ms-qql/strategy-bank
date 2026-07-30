@@ -140,6 +140,9 @@ def _build_run_row(r: dict) -> dict:
         "period_start": r["period_start"],
         "period_end": r.get("period_end"),
         "report_link": r.get("report_link"),
+        "source_name": r.get("source_name"),
+        "mts_compatibility": r.get("mts_compatibility"),
+        "robustness_status": None,
         "created_at": r["created_at"],
         "started_at": r.get("started_at"),
         "completed_at": r.get("completed_at"),
@@ -166,6 +169,8 @@ def list_results() -> list[dict]:
             sv.family_id AS strategy_family_id,
             sv.snapshot->>'name' AS strategy_name,
             sv.snapshot->>'category' AS category,
+            sv.snapshot->>'mts_compatibility' AS mts_compatibility,
+            s.file_name AS source_name,
             bp.id AS profile_id,
             bp.family_id AS profile_family_id,
             bp.version_number AS profile_version_number,
@@ -178,6 +183,7 @@ def list_results() -> list[dict]:
             be.external_job_id
         FROM runs r
         JOIN strategy_versions sv ON r.strategy_version_id = sv.id
+        LEFT JOIN sources s ON s.id = sv.source_id
         JOIN batches b ON r.batch_id = b.id
         JOIN backtest_profiles bp ON b.backtest_profile_id = bp.id
         LEFT JOIN backtest_executions be ON r.backtest_execution_id = be.id
@@ -195,10 +201,12 @@ def list_results() -> list[dict]:
             hr.created_at,
             NULL::TIMESTAMPTZ AS started_at,
             NULL::TIMESTAMPTZ AS completed_at,
-            CAST(NULL AS INT) AS strategy_version_number,
-            CAST(NULL AS UUID) AS strategy_family_id,
+            sv.version_number AS strategy_version_number,
+            sv.family_id AS strategy_family_id,
             hr.strategy_name,
-            CAST(NULL AS TEXT) AS category,
+            sv.snapshot->>'category' AS category,
+            sv.snapshot->>'mts_compatibility' AS mts_compatibility,
+            s.file_name AS source_name,
             CAST(NULL AS UUID) AS profile_id,
             CAST(NULL AS UUID) AS profile_family_id,
             CAST(NULL AS INT) AS profile_version_number,
@@ -224,6 +232,8 @@ def list_results() -> list[dict]:
             hif.created_at AS import_created_at
         FROM hal_results hr
         JOIN hal_imported_files hif ON hif.id = hr.imported_file_id
+        LEFT JOIN strategy_versions sv ON sv.id = hr.strategy_version_id
+        LEFT JOIN sources s ON s.id = sv.source_id
         WHERE hif.is_current = true
     """)
 
@@ -257,6 +267,14 @@ def _build_hal_result_row(r: dict) -> dict:
         and r.get("slippage_ticks") is not None
         and r.get("sizing_model") is not None
     )
+    comparison_group = None
+    if is_comparable:
+        comparison_group = (
+            f"{r.get('instrument')} · {r.get('timeframe')} · "
+            f"{r.get('period_start')}–{r.get('period_end')} · "
+            f"Fee {float(r['fee_pct']):g}% · Slip {float(r['slippage_ticks']):g} · "
+            f"{r.get('sizing_model')}"
+        )
     low_activity = tp is not None and tp < SUCCESS_GROUP_MIN_TRADES_PER_YEAR
     success_group = (
         is_comparable
@@ -288,7 +306,7 @@ def _build_hal_result_row(r: dict) -> dict:
         "status": r.get("status"),
         "error_message": r.get("error_message"),
         "profile_id": r.get("profile_id"),
-        "profile_name": r.get("profile_name"),
+        "profile_name": comparison_group,
         "profile_version_number": r.get("profile_version_number"),
         "profile_family_id": r.get("profile_family_id"),
         "timeframe": r.get("timeframe", ""),
@@ -314,8 +332,8 @@ def _build_hal_result_row(r: dict) -> dict:
         "import_version": r.get("import_version"),
         "import_created_at": r.get("import_created_at"),
         "strategy_version_status": strategy_version_status,
-        "source_name": None,
-        "mts_compatibility": None,
+        "source_name": r.get("source_name"),
+        "mts_compatibility": r.get("mts_compatibility"),
         "robustness_status": None,
         "created_at": r.get("created_at"),
         "started_at": r.get("started_at"),

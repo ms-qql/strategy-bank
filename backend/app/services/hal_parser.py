@@ -41,6 +41,8 @@ class ParsedResult:
     fee_pct: float | None = None
     slippage_ticks: float | None = None
     sizing_model: str | None = None
+    source_link: str | None = None
+    strategy_version_id: str | None = None
 
     error: str | None = None
 
@@ -62,17 +64,40 @@ _KPI_LABELS: dict[str, str] = {
 _DIRECTION_PATTERN = re.compile(r"\*\*Richtung:\*\*\s*(kombiniert|long.only|short.only)", re.IGNORECASE)
 _HEADING_PATTERN = re.compile(r"^#\s+(?:Backtest:\s*)?(.+)$", re.MULTILINE)
 _SOURCE_PATTERN = re.compile(r"\*\*Quelle:\*\*\s*\[.+\]\((.+)\)")
+_STRATEGY_VERSION_PATTERN = re.compile(
+    r"\*\*(?:Strategieversion|Strategy[- ]Version)(?:-ID| ID)?:\*\*\s*"
+    r"([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})",
+    re.IGNORECASE,
+)
+_COMMISSION_PATTERN = re.compile(
+    r"(?:Commission|Kommission)(?:\s+auf)?\s+([0-9]+(?:[.,][0-9]+)?)\s*%",
+    re.IGNORECASE,
+)
+_SLIPPAGE_PATTERN = re.compile(
+    r"Slippage(?:\s*[:=]|\s+auf)?\s*([0-9]+(?:[.,][0-9]+)?)",
+    re.IGNORECASE,
+)
+_SIZING_PATTERN = re.compile(
+    r"Sizing(?:\s+auf)?\s+([^,\n—]+)",
+    re.IGNORECASE,
+)
 
 _TABLE_ROW_PATTERN = re.compile(r"^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|")
 
 
 def _parse_percentage(raw: str) -> float | None:
-    """'15.5%' → 15.5, '−12.3%' → -12.3, '42% (21/50)' → 42.0, '$1234' → None"""
-    raw = raw.strip().replace("−", "-").replace(",", "").replace("$", "").replace("%", "").replace("*", "")
-    # Handle "42% (21/50)" → extract "42"
-    paren = raw.find("(")
-    if paren >= 0:
-        raw = raw[:paren].strip()
+    """Liest Dezimalzahlen mit deutschem oder englischem Dezimaltrenner."""
+    match = re.search(r"[-+]?\d[\d.,]*", raw.strip().replace("−", "-"))
+    if not match:
+        return None
+    raw = match.group(0)
+    if "," in raw and "." in raw:
+        if raw.rfind(",") > raw.rfind("."):
+            raw = raw.replace(".", "").replace(",", ".")
+        else:
+            raw = raw.replace(",", "")
+    elif "," in raw:
+        raw = raw.replace(",", ".")
     try:
         return float(raw)
     except (ValueError, TypeError):
@@ -231,11 +256,15 @@ def parse_hal_backtest(markdown: str) -> ParsedResult:
         strategy_name = ""
 
     source_match = _SOURCE_PATTERN.search(markdown)
+    source_link = source_match.group(1).strip() if source_match else None
+    version_match = _STRATEGY_VERSION_PATTERN.search(markdown)
+    strategy_version_id = version_match.group(1) if version_match else None
 
     # Faktoren-Tabelle (Asset, Timeframe, Periode, Bars)
     faktoren = _read_table_by_key(markdown, "Faktoren")
     asset_raw = faktoren.get("Asset", "")
-    asset = asset_raw.split("(")[0].strip() if asset_raw else ""
+    asset_parts = [part.strip() for part in re.split(r"[()]", asset_raw) if part.strip()]
+    asset = next((part for part in asset_parts if ":" in part), asset_parts[0] if asset_parts else "")
     if not asset:
         errors.append("Asset fehlt.")
 
@@ -318,15 +347,26 @@ def parse_hal_backtest(markdown: str) -> ParsedResult:
     pine_code = _extract_pine_code(markdown)
     direction = _parse_direction(markdown)
 
-    fee_pct: float | None = None
-    slippage_ticks: float | None = None
-    sizing_model: str | None = None
-    for row in _read_table_section(markdown, "Faktoren"):
-        vals = {_normalize_key(k): v for k, v in row.items()}
-        if "gebühr" in vals or "fee" in vals:
-            fee_pct = _parse_percentage(list(vals.values())[0])
-        if "slippage" in vals or "slippage" in vals:
-            slippage_ticks = _parse_percentage(list(vals.values())[0])
+    normalized_factors = {_normalize_key(k): v.strip() for k, v in faktoren.items()}
+    fee_raw = normalized_factors.get("gebühren") or normalized_factors.get("gebühr") or normalized_factors.get("fee")
+    slippage_raw = normalized_factors.get("slippage") or normalized_factors.get("slippage ticks")
+    sizing_model = (
+        normalized_factors.get("sizing-modell")
+        or normalized_factors.get("sizing modell")
+        or normalized_factors.get("sizing model")
+        or normalized_factors.get("position sizing")
+    )
+    fee_pct = _parse_percentage(fee_raw) if fee_raw else None
+    slippage_ticks = _parse_percentage(slippage_raw) if slippage_raw else None
+    if fee_pct is None:
+        match = _COMMISSION_PATTERN.search(markdown)
+        fee_pct = _parse_percentage(match.group(1)) if match else None
+    if slippage_ticks is None:
+        match = _SLIPPAGE_PATTERN.search(markdown)
+        slippage_ticks = _parse_percentage(match.group(1)) if match else None
+    if sizing_model is None:
+        match = _SIZING_PATTERN.search(markdown)
+        sizing_model = match.group(1).strip() if match else None
 
     return ParsedResult(
         strategy_name=strategy_name,
@@ -349,4 +389,6 @@ def parse_hal_backtest(markdown: str) -> ParsedResult:
         fee_pct=fee_pct,
         slippage_ticks=slippage_ticks,
         sizing_model=sizing_model,
+        source_link=source_link,
+        strategy_version_id=strategy_version_id,
     )

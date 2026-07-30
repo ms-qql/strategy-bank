@@ -128,6 +128,30 @@ class TestHalImportUpload:
         assert resp.status_code == 201
         assert resp.json()["files"][0]["status"] == "aktualisiert"
 
+    def test_invalid_update_keeps_last_valid_result_current(self, client):
+        md = _sample_hal_md("Keep Valid")
+        client.post("/hal-results/import", files=[("files", ("keep.md", md, "text/markdown"))])
+
+        resp = client.post(
+            "/hal-results/import",
+            files=[("files", ("keep.md", b"# Backtest: Keep Valid\n\nKeine KPIs.", "text/markdown"))],
+        )
+
+        assert resp.status_code == 201
+        assert resp.json()["files"][0]["status"] == "fehlerhaft"
+        rows = [r for r in client.get("/results").json() if r["import_origin_path"] == "keep.md"]
+        assert len(rows) == 1
+        assert rows[0]["import_version"] == 1
+
+        repaired = client.post(
+            "/hal-results/import",
+            files=[("files", ("keep.md", md.replace(b"25.0%", b"30.0%"), "text/markdown"))],
+        )
+        assert repaired.json()["files"][0]["status"] == "aktualisiert"
+        rows = [r for r in client.get("/results").json() if r["import_origin_path"] == "keep.md"]
+        assert len(rows) == 1
+        assert rows[0]["import_version"] == 3
+
     def test_import_invalid_file_marked_failed(self, client):
         md = b"# No tables\n\nJust text.\n"
         resp = client.post(
@@ -198,6 +222,54 @@ class TestHalImportUpload:
 
 
 class TestHalAssignment:
+    def test_file_identifier_assigns_and_beats_name(self, client):
+        expected = _make_frozen_version(client, name="Identifier Target")
+        _make_frozen_version(client, name="Name Target")
+        md = _sample_hal_md("Name Target").replace(
+            b"**Datum:** 2026-07-30",
+            f"**Datum:** 2026-07-30\n**Strategieversion-ID:** {expected['id']}".encode(),
+        )
+
+        client.post("/hal-results/import", files=[("files", ("identifier.md", md, "text/markdown"))])
+
+        row = run_query_one(
+            """SELECT hr.strategy_version_id, hr.assignment_origin
+               FROM hal_results hr JOIN hal_imported_files hif ON hif.id = hr.imported_file_id
+               WHERE hif.origin_path = 'identifier.md' AND hif.is_current = true"""
+        )
+        assert str(row["strategy_version_id"]) == expected["id"]
+        assert row["assignment_origin"] == "file_identifier"
+
+    def test_unknown_file_identifier_does_not_fall_back_to_name(self, client):
+        _make_frozen_version(client, name="Known Name")
+        md = _sample_hal_md("Known Name").replace(
+            b"**Datum:** 2026-07-30",
+            f"**Datum:** 2026-07-30\n**Strategieversion-ID:** {uuid4()}".encode(),
+        )
+
+        client.post("/hal-results/import", files=[("files", ("unknown-id.md", md, "text/markdown"))])
+
+        row = next(
+            u for u in client.get("/hal-results/unassigned").json()
+            if u["import_origin_path"] == "unknown-id.md"
+        )
+        assert row["suggested_version_id"] is None
+
+    def test_source_link_is_used_before_name_suggestion(self, client):
+        expected = _make_frozen_version(client, name="Source Target")
+        _make_frozen_version(client, name="Name Target")
+        run_command("UPDATE sources SET file_name = 'SMA_Cross.md' WHERE id = %s", [expected["source_id"]])
+        md = _sample_hal_md("Name Target").replace(
+            b"**Datum:** 2026-07-30",
+            b"**Datum:** 2026-07-30\n"
+            b"**Quelle:** [01_Quellen/SMA_Cross.md](../01_Quellen/SMA_Cross.md)",
+        )
+
+        client.post("/hal-results/import", files=[("files", ("source.md", md, "text/markdown"))])
+
+        unassigned = client.get("/hal-results/unassigned").json()
+        row = next(u for u in unassigned if u["import_origin_path"] == "source.md")
+        assert row["suggested_version_id"] == expected["id"]
     def test_name_match_is_suggestion_not_auto_assign(self, client):
         """Ein eindeutiger Namenstreffer ist ein Vorschlag, keine stille Zuweisung."""
         version = _make_frozen_version(client)
@@ -305,6 +377,36 @@ class TestShortlist:
 
 
 class TestResultsWithHalImport:
+    def test_assigned_comparable_result_exposes_group_and_strategy_metadata(self, client):
+        version = _make_frozen_version(client, name="Comparable")
+        md = _sample_hal_md("Comparable").replace(
+            b"**Datum:** 2026-07-30",
+            f"**Datum:** 2026-07-30\n**Strategieversion-ID:** {version['id']}".encode(),
+        ).replace(
+            b"| Timeframe | 4h |",
+            "| Timeframe | 4h |\n"
+            "| Gebühren | 0.06% |\n"
+            "| Slippage | 2 |\n"
+            "| Sizing-Modell | Fix 100% |".encode(),
+        )
+        client.post("/hal-results/import", files=[("files", ("comparable.md", md, "text/markdown"))])
+        client.post(
+            "/hal-results/import",
+            files=[("files", ("other-profile.md", md.replace(b"0.06%", b"0.10%"), "text/markdown"))],
+        )
+
+        rows = client.get("/results").json()
+        row = next(r for r in rows if r["import_origin_path"] == "comparable.md")
+        other = next(r for r in rows if r["import_origin_path"] == "other-profile.md")
+
+        assert row["strategy_version_number"] == version["version_number"]
+        assert row["strategy_family_id"] == version["family_id"]
+        assert row["category"] == "Trendfolge"
+        assert row["mts_compatibility"] == "discrete"
+        assert row["is_comparable"] is True
+        assert row["profile_name"] is not None
+        assert row["profile_name"] != other["profile_name"]
+
     def test_hal_results_appear_in_results(self, client):
         client.post(
             "/hal-results/import",

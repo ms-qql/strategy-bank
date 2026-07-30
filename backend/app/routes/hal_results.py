@@ -5,6 +5,7 @@ import io
 import json
 import os.path
 import zipfile
+from pathlib import PurePosixPath
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -176,22 +177,38 @@ def _process_one_file(
 
     # Gleicher Pfad, anderer Hash → neue Importversion
     current = run_query_one(
-        "SELECT id, import_version FROM hal_imported_files WHERE origin_path = %s AND is_current = true",
+        "SELECT 1 FROM hal_imported_files WHERE origin_path = %s AND is_current = true",
         [origin_path],
     )
     if current:
-        return _updated_file(cur, run_id, current["id"], origin_path, content_hash, raw_bytes)
+        return _updated_file(cur, run_id, origin_path, content_hash, raw_bytes)
 
     # Neuimport
     return _import_file(cur, run_id, origin_path, content_hash, raw_bytes)
 
 
-def _updated_file(cur, run_id: UUID, existing_id: UUID, origin_path: str, content_hash: str, raw_bytes: bytes) -> dict:
-    old_version = run_query_one(
-        "SELECT import_version, content_hash FROM hal_imported_files WHERE id = %s",
-        [existing_id],
+def _updated_file(cur, run_id: UUID, origin_path: str, content_hash: str, raw_bytes: bytes) -> dict:
+    version_row = run_query_one(
+        "SELECT COALESCE(MAX(import_version), 0) + 1 AS next FROM hal_imported_files WHERE origin_path = %s",
+        [origin_path],
     )
-    new_version = (old_version["import_version"] + 1) if old_version else 1
+    new_version = version_row["next"] if version_row else 1
+    text = raw_bytes.decode("utf-8", errors="replace")
+    parsed = parse_hal_backtest(text)
+
+    if not parsed.is_valid:
+        cur.execute(
+            """INSERT INTO hal_imported_files (id, import_run_id, origin_path, content_hash,
+               import_version, is_current, processing_status, error_message)
+               VALUES (%s, %s, %s, %s, %s, false, 'fehlerhaft', %s)""",
+            [uuid4(), run_id, origin_path, content_hash, new_version, parsed.error],
+        )
+        return {
+            "origin_path": origin_path,
+            "content_hash": content_hash,
+            "status": "fehlerhaft",
+            "error_message": parsed.error,
+        }
 
     cur.execute(
         "UPDATE hal_imported_files SET is_current = false WHERE origin_path = %s AND is_current = true",
@@ -206,17 +223,14 @@ def _updated_file(cur, run_id: UUID, existing_id: UUID, origin_path: str, conten
         [new_id, run_id, origin_path, content_hash, new_version],
     )
 
-    text = raw_bytes.decode("utf-8", errors="replace")
-    parsed = parse_hal_backtest(text)
-    if parsed.is_valid:
-        _insert_hal_result(cur, new_id, parsed, content_hash, new_version)
+    _insert_hal_result(cur, new_id, parsed, new_version)
 
-    result: dict = {"origin_path": origin_path, "content_hash": content_hash, "status": "aktualisiert"}
-    if parsed.error:
-        result["error_message"] = parsed.error
-    else:
-        result["strategy_name"] = parsed.strategy_name
-    return result
+    return {
+        "origin_path": origin_path,
+        "content_hash": content_hash,
+        "status": "aktualisiert",
+        "strategy_name": parsed.strategy_name,
+    }
 
 
 def _reject_file(cur, run_id: UUID, origin_path: str, content_hash: str, reason: str) -> dict:
@@ -241,7 +255,7 @@ def _import_file(cur, run_id: UUID, origin_path: str, content_hash: str, raw_byt
                VALUES (%s, %s, %s, %s, 1, true, 'importiert')""",
             [file_id, run_id, origin_path, content_hash],
         )
-        _insert_hal_result(cur, file_id, parsed, content_hash, 1)
+        _insert_hal_result(cur, file_id, parsed, 1)
         return {"origin_path": origin_path, "content_hash": content_hash, "status": "importiert", "strategy_name": parsed.strategy_name}
     else:
         cur.execute(
@@ -253,20 +267,29 @@ def _import_file(cur, run_id: UUID, origin_path: str, content_hash: str, raw_byt
         return {"origin_path": origin_path, "content_hash": content_hash, "status": "fehlerhaft", "error_message": parsed.error}
 
 
-def _insert_hal_result(cur, file_id: UUID, parsed, content_hash: str, import_version: int) -> None:
-    # Kein Datei-Identifier, kein Auto-Assign: ein Namenstreffer ist höchstens
-    # ein Vorschlag (siehe _find_unique_name_match), nie eine stille Zuweisung.
+def _insert_hal_result(cur, file_id: UUID, parsed, import_version: int) -> None:
     sv_id = None
     assignment_origin = None
+    if parsed.strategy_version_id:
+        cur.execute("SELECT id FROM strategy_versions WHERE id = %s", [parsed.strategy_version_id])
+        match = cur.fetchone()
+        if match:
+            sv_id = match["id"]
+            assignment_origin = "file_identifier"
+
+    raw_extracted = {
+        "source_link": parsed.source_link,
+        "strategy_version_id": parsed.strategy_version_id,
+    }
 
     cur.execute(
         """INSERT INTO hal_results (id, imported_file_id, strategy_name, asset, timeframe,
            period_start, period_end, net_return_pct, max_drawdown_pct, trade_count,
            sortino_ratio, profit_factor, sharpe_ratio, win_rate_pct, report_link,
            parameters, long_short_breakdown, pine_code, direction,
-           fee_pct, slippage_ticks, sizing_model,
+           fee_pct, slippage_ticks, sizing_model, raw_extracted,
            strategy_version_id, assignment_origin, import_version)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         [
             uuid4(), file_id, parsed.strategy_name, parsed.asset, parsed.timeframe,
             parsed.period_start, parsed.period_end, parsed.net_return_pct, parsed.max_drawdown_pct, parsed.trade_count,
@@ -274,7 +297,7 @@ def _insert_hal_result(cur, file_id: UUID, parsed, content_hash: str, import_ver
             json.dumps(parsed.parameters) if parsed.parameters else None,
             json.dumps(parsed.long_short_breakdown) if parsed.long_short_breakdown else None,
             parsed.pine_code, parsed.direction,
-            parsed.fee_pct, parsed.slippage_ticks, parsed.sizing_model,
+            parsed.fee_pct, parsed.slippage_ticks, parsed.sizing_model, json.dumps(raw_extracted),
             sv_id, assignment_origin, import_version,
         ],
     )
@@ -325,6 +348,22 @@ def _suggest_version(result: dict) -> dict | None:
     Treffer in UNTERSCHIEDLICHEN Familien sind mehrdeutig ⇒ kein Vorschlag.
     """
     name = result.get("strategy_name", "")
+    metadata = result.get("raw_extracted") or {}
+    if isinstance(metadata, dict) and metadata.get("strategy_version_id"):
+        return None
+    source_link = metadata.get("source_link") if isinstance(metadata, dict) else None
+    if source_link:
+        source_name = PurePosixPath(source_link.replace("\\", "/")).name
+        rows = run_query(
+            """SELECT sv.id, sv.family_id, sv.snapshot->>'name' AS name, sv.version_number
+               FROM strategy_versions sv
+               JOIN sources s ON s.id = sv.source_id
+               WHERE lower(trim(s.file_name)) = lower(trim(%s))""",
+            [source_name],
+        )
+        if rows:
+            return _unique_family_latest(rows)
+
     if not name:
         return None
     rows = run_query(
@@ -333,6 +372,10 @@ def _suggest_version(result: dict) -> dict | None:
            WHERE lower(trim(snapshot->>'name')) = lower(trim(%s))""",
         [name],
     )
+    return _unique_family_latest(rows)
+
+
+def _unique_family_latest(rows: list[dict]) -> dict | None:
     if not rows:
         return None
     families = {r["family_id"] for r in rows}

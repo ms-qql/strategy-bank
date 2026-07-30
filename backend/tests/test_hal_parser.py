@@ -103,6 +103,27 @@ class TestParserMinimalvertrag:
         assert result.pine_code is not None
         assert "//@version=6" in result.pine_code
         assert result.long_short_breakdown is not None
+        assert result.source_link == "../01_Quellen/SMA_Cross.md"
+
+    def test_parse_assignment_and_comparison_metadata(self):
+        version_id = "11111111-1111-4111-8111-111111111111"
+        md = SAMPLE_MD.replace(
+            "**Datum:** 2026-07-30",
+            f"**Datum:** 2026-07-30\n**Strategieversion-ID:** {version_id}",
+        ).replace(
+            "| Bars | 6570 |",
+            "| Bars | 6570 |\n"
+            "| Gebühren | 0.06% |\n"
+            "| Slippage | 2 |\n"
+            "| Sizing-Modell | Fix 100% |",
+        )
+
+        result = parse_hal_backtest(md)
+
+        assert result.strategy_version_id == version_id
+        assert result.fee_pct == 0.06
+        assert result.slippage_ticks == 2
+        assert result.sizing_model == "Fix 100%"
 
     def test_parse_parameters(self):
         result = parse_hal_backtest(SAMPLE_MD)
@@ -154,6 +175,33 @@ class TestParserMinimalvertrag:
         assert result.is_valid
         assert result.net_return_pct == -30.0
         assert result.max_drawdown_pct == -45.0
+
+    def test_parse_german_decimal_and_parenthesized_provider_symbol(self):
+        md = SAMPLE_MD.replace(
+            "BYBIT:BTCUSDT.P (BTC)",
+            "BTCUSDT (BYBIT:BTCUSDT.P)",
+        ).replace(
+            "**56.0%**", "**-31,52%**"
+        ).replace(
+            "Profit Factor | 1.8", "Profit Factor | 0,93"
+        ).replace(
+            "Win Rate | 42% (21/50)", "Win Rate | 25,32% (80/316)"
+        ).replace(
+            "Max Drawdown | -15.0%", "Max Drawdown | -69,79%"
+        ).replace(
+            "1. **Indikator-Ersetzungen:**",
+            "1. **Indikator-Ersetzungen:**",
+        ) + "\n2. **Parity-Adjustments:** Commission 0,05%, Sizing 100% Equity, Margin 100/100"
+
+        result = parse_hal_backtest(md)
+
+        assert result.asset == "BYBIT:BTCUSDT.P"
+        assert result.net_return_pct == -31.52
+        assert result.profit_factor == 0.93
+        assert result.win_rate_pct == 25.32
+        assert result.max_drawdown_pct == -69.79
+        assert result.fee_pct == 0.05
+        assert result.sizing_model == "100% Equity"
 
     def test_direction_long_only(self):
         md = """# Backtest: Long Only

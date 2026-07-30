@@ -123,6 +123,8 @@ export default function ErgebnissePage() {
   const [filterDirection, setFilterDirection] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterResultType, setFilterResultType] = useState("");
+  const [filterMtsCompatibility, setFilterMtsCompatibility] = useState("");
+  const [filterRobustnessStatus, setFilterRobustnessStatus] = useState("");
   const [filterSuccessGroup, setFilterSuccessGroup] = useState(false);
   const [filterShortlisted, setFilterShortlisted] = useState(false);
 
@@ -157,6 +159,8 @@ export default function ErgebnissePage() {
     const statuses = new Set<string>();
     const resultTypes = new Set<string>();
     const timeframes = new Set<string>();
+    const mtsCompatibilities = new Set<string>();
+    const robustnessStatuses = new Set<string>();
     for (const r of rows) {
       strategies.add(r.strategy_name);
       if (r.strategy_version_number !== null)
@@ -166,8 +170,13 @@ export default function ErgebnissePage() {
       if (r.status) statuses.add(r.status);
       resultTypes.add(r.result_type);
       if (r.timeframe) timeframes.add(r.timeframe);
+      if (r.mts_compatibility) mtsCompatibilities.add(r.mts_compatibility);
+      if (r.robustness_status) robustnessStatuses.add(r.robustness_status);
     }
-    return { strategies, versions, instruments, directions, statuses, resultTypes, timeframes };
+    return {
+      strategies, versions, instruments, directions, statuses, resultTypes,
+      timeframes, mtsCompatibilities, robustnessStatuses,
+    };
   }, [rows]);
 
   const filtered = useMemo(() => {
@@ -188,6 +197,10 @@ export default function ErgebnissePage() {
       result = result.filter((r) => r.result_type === filterResultType);
     if (filterTimeframe)
       result = result.filter((r) => r.timeframe === filterTimeframe);
+    if (filterMtsCompatibility)
+      result = result.filter((r) => r.mts_compatibility === filterMtsCompatibility);
+    if (filterRobustnessStatus)
+      result = result.filter((r) => r.robustness_status === filterRobustnessStatus);
     if (filterSuccessGroup)
       result = result.filter((r) => r.success_group);
     if (filterShortlisted)
@@ -195,8 +208,8 @@ export default function ErgebnissePage() {
     return result;
   }, [
     rows, filterStrategy, filterVersion, filterInstrument, filterCategory,
-    filterDirection, filterStatus, filterResultType, filterTimeframe, filterSuccessGroup,
-    filterShortlisted,
+    filterDirection, filterStatus, filterResultType, filterTimeframe,
+    filterMtsCompatibility, filterRobustnessStatus, filterSuccessGroup, filterShortlisted,
   ]);
 
   const sorted = useMemo(() => {
@@ -214,11 +227,11 @@ export default function ErgebnissePage() {
 
   const profileFamilies = useMemo(() => {
     const families = new Map<string, ResultRow[]>();
-    const halFamily = "hal-imports";
     for (const r of sorted) {
       if (r.result_type === "HAL-Import") {
-        if (!families.has(halFamily)) families.set(halFamily, []);
-        families.get(halFamily)!.push(r);
+        const key = `hal-${r.profile_name ?? "nicht-vergleichbar"}`;
+        if (!families.has(key)) families.set(key, []);
+        families.get(key)!.push(r);
       } else {
         const key = r.profile_family_id ?? `unknown-${r.run_id}`;
         if (!families.has(key)) families.set(key, []);
@@ -247,6 +260,8 @@ export default function ErgebnissePage() {
     setFilterStatus("");
     setFilterResultType("");
     setFilterTimeframe("");
+    setFilterMtsCompatibility("");
+    setFilterRobustnessStatus("");
     setFilterSuccessGroup(false);
     setFilterShortlisted(false);
   };
@@ -306,8 +321,8 @@ export default function ErgebnissePage() {
 
   const hasFilters =
     filterStrategy || filterVersion || filterInstrument || filterCategory ||
-    filterDirection || filterStatus || filterResultType || filterTimeframe || filterSuccessGroup ||
-    filterShortlisted;
+    filterDirection || filterStatus || filterResultType || filterTimeframe ||
+    filterMtsCompatibility || filterRobustnessStatus || filterSuccessGroup || filterShortlisted;
 
   if (loading) {
     return (
@@ -419,6 +434,20 @@ export default function ErgebnissePage() {
               onChange={setFilterTimeframe}
               placeholder="Alle Timeframes"
             />
+            <SelectFilter
+              label="MTS-Eignung"
+              value={filterMtsCompatibility}
+              options={[...uniqueValues.mtsCompatibilities].sort()}
+              onChange={setFilterMtsCompatibility}
+              placeholder="Alle MTS-Eignungen"
+            />
+            <SelectFilter
+              label="Robustheitsstatus"
+              value={filterRobustnessStatus}
+              options={[...uniqueValues.robustnessStatuses].sort()}
+              onChange={setFilterRobustnessStatus}
+              placeholder="Alle Robustheitsstatus"
+            />
             <CheckboxFilter
               label="Erfolgsgruppe"
               checked={filterSuccessGroup}
@@ -465,7 +494,11 @@ export default function ErgebnissePage() {
         <ErgebnisGruppe
           key={familyId}
           rows={group}
-          groupLabel={familyId === "hal-imports" ? "HAL-Importe" : `Profil: ${group[0].profile_name ?? "Unbekannt"} (v${group[0].profile_version_number ?? "?"})`}
+          groupLabel={
+            familyId.startsWith("hal-")
+              ? `HAL-Importe · ${group[0].profile_name ?? "Nicht vergleichbar"}`
+              : `Profil: ${group[0].profile_name ?? "Unbekannt"} (v${group[0].profile_version_number ?? "?"})`
+          }
           sort={sort}
           onSort={handleSort}
           isHighlighted={hasMultipleProfiles}
@@ -739,11 +772,13 @@ function ErgebnisZeile({
           )}
           {row.result_type === "HAL-Import" && row.strategy_version_status && (
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant="destructive" className="text-xs">
+              <TooltipTrigger
+                render={
+                  <Badge variant="destructive" className="text-xs">
                   Version nicht verfügbar
-                </Badge>
-              </TooltipTrigger>
+                  </Badge>
+                }
+              />
               <TooltipContent>
                 {row.strategy_version_status}
               </TooltipContent>
@@ -761,11 +796,13 @@ function ErgebnisZeile({
           )}
           {!row.is_comparable && (
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant="outline" className="text-xs text-gray-500 border-gray-300">
+              <TooltipTrigger
+                render={
+                  <Badge variant="outline" className="text-xs text-gray-500 border-gray-300">
                   Nicht vergleichbar
-                </Badge>
-              </TooltipTrigger>
+                  </Badge>
+                }
+              />
               <TooltipContent>
                 Gebühren, Slippage oder Sizing-Modell fehlen oder weichen ab.
               </TooltipContent>
@@ -820,11 +857,13 @@ function ErgebnisZeile({
 function HerkunftsPopover({ row }: { row: ResultRow }) {
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+      <TooltipTrigger
+        render={
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
           <Info className="h-3 w-3 text-muted-foreground" />
-        </Button>
-      </TooltipTrigger>
+          </Button>
+        }
+      />
       <TooltipContent side="left" className="max-w-[300px] text-xs">
         <div className="space-y-1">
           <p>

@@ -451,5 +451,20 @@ Mandanten noch Login. Alle Endpunkte folgen dem bestehenden Muster der übrigen 
 - **Production Ready:** **NO**
 - **Status:** **In Review**
 
+## Implementation Fix nach QA Re-Test
+
+**Fixed:** 2026-07-30
+
+- BUG-4: Base-UI-Tooltips verwenden `render` statt der nicht unterstützten Radix-Prop `asChild`; der Next.js-Produktionsbuild ist wieder grün.
+- BUG-5: Geänderte Dateien werden vor dem Versionswechsel geparst. Fehlerhafte Updates erhalten `fehlerhaft`, bleiben im Audit-Trail und verdrängen das letzte gültige Ergebnis nicht.
+- BUG-1 Rest: Der Parser übernimmt `Strategieversion-ID` und Quellenlink. Gültige IDs werden mit Herkunft `file_identifier` zugeordnet; unbekannte IDs fallen nicht still auf Namen zurück. Quellenlinks erzeugen nur bei genau einer Strategiefamilie einen Vorschlag.
+- Vergleichsprofil: Gebühren, Slippage und Sizing werden deterministisch gelesen. HAL-Ergebnisse werden nach Asset, Timeframe, Zeitraum und identischem Kosten-/Sizing-Profil getrennt gruppiert.
+- Screening: MTS-Eignung wird aus der zugeordneten Strategieversion geliefert; MTS- und Robustheitsstatus-Schnellfilter sind vorhanden.
+- Zusätzliche Parser-Korrektur: deutsche und englische Dezimaltrenner sowie Provider-Symbole in Klammern werden korrekt verarbeitet.
+
+**Verifikation:** 50/50 betroffene Backend-Tests und 294/294 Backend-Regressionsfälle grün; `npm run build`, PROJ-21-ESLint und `git diff --check` grün.
+
+**Status:** Bleibt bis zum erneuten vollständigen `/abc-qa` auf **In Review**.
+
 ## Deployment
 _To be added by /deploy_
