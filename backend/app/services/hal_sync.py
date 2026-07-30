@@ -130,11 +130,27 @@ def build_steckbrief_export(draft_id: UUID) -> tuple[str, str] | None:
     return filename, content
 
 
+def build_steckbriefe_zip_for_sources(source_ids: list[UUID]) -> bytes:
+    """Builds a ZIP of the Hal-Steckbriefe for drafts extracted from the given sources."""
+    drafts = run_query(
+        """SELECT sd.id, sd.name FROM strategy_drafts sd
+           JOIN extraction_runs er ON er.id = sd.extraction_run_id
+           WHERE er.source_id = ANY(%s)
+           ORDER BY sd.created_at""",
+        [source_ids],
+    )
+    return _zip_drafts(drafts)
+
+
 def build_all_steckbriefe_zip() -> bytes:
     """Builds a ZIP of every draft's Hal-Steckbrief for manual import into the vault."""
     drafts = run_query(
         """SELECT id, name FROM strategy_drafts ORDER BY created_at""",
     )
+    return _zip_drafts(drafts)
+
+
+def _zip_drafts(drafts: list[dict]) -> bytes:
     buffer = io.BytesIO()
     used_names: dict[str, int] = {}
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:

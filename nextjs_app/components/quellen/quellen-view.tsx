@@ -37,6 +37,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ExtrahierenButton } from "./extrahieren-button";
 import { EntwurfCard } from "./entwurf-card";
 import { MarkdownDropzone } from "./markdown-dropzone";
@@ -96,6 +97,45 @@ export function QuellenView() {
   const pollHandles = useRef<Map<string, ReturnType<typeof setTimeout>>>(
     new Map(),
   );
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [downloadFehler, setDownloadFehler] = useState<string | null>(null);
+  const [downloadLaeuft, setDownloadLaeuft] = useState(false);
+
+  function toggleSelected(sourceId: string, checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(sourceId);
+      else next.delete(sourceId);
+      return next;
+    });
+  }
+
+  async function downloadAusgewaehlte() {
+    setDownloadFehler(null);
+    setDownloadLaeuft(true);
+    try {
+      const res = await fetch(apiUrl("/hal/export-selected"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_ids: Array.from(selected) }),
+      });
+      if (!res.ok) throw new Error("Download fehlgeschlagen.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "hal-steckbriefe-auswahl.zip";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setDownloadFehler(
+        e instanceof Error ? e.message : "Download fehlgeschlagen.",
+      );
+    } finally {
+      setDownloadLaeuft(false);
+    }
+  }
 
   useEffect(() => {
     apiGet<unknown>(`/sources?limit=${PAGE_SIZE}&offset=0`)
@@ -425,15 +465,35 @@ export function QuellenView() {
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Erfasste Quellen</CardTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => window.open(apiUrl("/hal/export-all"), "_blank")}
-          >
-            Alle Hal-Steckbriefe herunterladen (ZIP)
-          </Button>
+          <div className="flex items-center gap-2">
+            {selected.size > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={downloadAusgewaehlte}
+                disabled={downloadLaeuft}
+              >
+                {downloadLaeuft && (
+                  <Loader className="mr-1 h-3.5 w-3.5 animate-spin" />
+                )}
+                Auswahl herunterladen ({selected.size})
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(apiUrl("/hal/export-all"), "_blank")}
+            >
+              Alle Hal-Steckbriefe herunterladen (ZIP)
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
+          {downloadFehler && (
+            <Alert variant="destructive" className="mb-3">
+              <AlertDescription>{downloadFehler}</AlertDescription>
+            </Alert>
+          )}
           {ladeliste ? (
             <p className="text-sm text-muted-foreground">Wird geladen …</p>
           ) : listenfehler ? (
@@ -447,6 +507,7 @@ export function QuellenView() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8" />
                   <TableHead className="w-8" />
                   <TableHead>Erfasst am</TableHead>
                   <TableHead>Quell-Hash</TableHead>
@@ -479,6 +540,17 @@ export function QuellenView() {
                         }}
                         tabIndex={0}
                       >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          {s.extraction_status === "extrahiert" && (
+                            <Checkbox
+                              checked={selected.has(s.id)}
+                              onCheckedChange={(checked) =>
+                                toggleSelected(s.id, checked === true)
+                              }
+                              aria-label={`Quelle ${s.id} auswählen`}
+                            />
+                          )}
+                        </TableCell>
                         <TableCell>
                           {expanded ? (
                             <ChevronDown
@@ -539,7 +611,7 @@ export function QuellenView() {
                       </TableRow>
                       {expanded && (
                         <TableRow key={`${s.id}-detail`} className="bg-muted/20">
-                          <TableCell colSpan={6} className="align-top whitespace-normal p-0">
+                          <TableCell colSpan={7} className="align-top whitespace-normal p-0">
                             <EntwuerfeSection
                               state={extData.get(s.id)}
                               onRetryLatest={() => toggleExpand(s.id)}

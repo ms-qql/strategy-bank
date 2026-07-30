@@ -106,3 +106,70 @@ class TestHalExportAll:
         matching = [n for n in zf.namelist() if n.startswith("HalZipDuplicateName")]
         assert len(matching) == 2
         assert len(set(matching)) == 2
+
+
+class TestHalExportSelected:
+    def test_export_selected_includes_only_chosen_sources(self, client):
+        import zipfile
+        import io
+
+        src_a = _make_source()
+        run_a = _make_run(src_a)
+        _make_draft(run_a, "HalSelectedIncluded")
+
+        src_b = _make_source()
+        run_b = _make_run(src_b)
+        _make_draft(run_b, "HalSelectedExcluded")
+
+        r = client.post("/hal/export-selected", json={"source_ids": [src_a]})
+        assert r.status_code == 200
+        assert r.headers["content-type"] == "application/zip"
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        assert "HalSelectedIncluded.md" in zf.namelist()
+        assert "HalSelectedExcluded.md" not in zf.namelist()
+
+    def test_export_selected_multiple_sources(self, client):
+        import zipfile
+        import io
+
+        src_a = _make_source()
+        run_a = _make_run(src_a)
+        _make_draft(run_a, "HalMultiA")
+
+        src_b = _make_source()
+        run_b = _make_run(src_b)
+        _make_draft(run_b, "HalMultiB")
+
+        r = client.post("/hal/export-selected", json={"source_ids": [src_a, src_b]})
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        assert "HalMultiA.md" in zf.namelist()
+        assert "HalMultiB.md" in zf.namelist()
+
+    def test_export_selected_empty_list_400(self, client):
+        r = client.post("/hal/export-selected", json={"source_ids": []})
+        assert r.status_code == 400
+
+    def test_export_selected_unknown_source_returns_empty_zip(self, client):
+        import zipfile
+        import io
+
+        r = client.post("/hal/export-selected", json={"source_ids": [str(uuid4())]})
+        assert r.status_code == 200
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        assert zf.namelist() == []
+
+    def test_export_selected_dedupes_same_filename(self, client):
+        import zipfile
+        import io
+
+        src = _make_source()
+        run_a = _make_run(src)
+        _make_draft(run_a, "HalSelectedDuplicateName")
+        run_b = _make_run(src)
+        _make_draft(run_b, "HalSelectedDuplicateName")
+
+        r = client.post("/hal/export-selected", json={"source_ids": [src]})
+        zf = zipfile.ZipFile(io.BytesIO(r.content))
+        matching = [n for n in zf.namelist() if n.startswith("HalSelectedDuplicateName")]
+        assert len(matching) == 2
+        assert len(set(matching)) == 2
