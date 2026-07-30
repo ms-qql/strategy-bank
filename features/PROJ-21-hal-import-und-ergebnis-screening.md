@@ -1,6 +1,6 @@
 # PROJ-21: HAL-Import und Ergebnis-Screening
 
-## Status: In Progress
+## Status: In Review
 **Created:** 2026-07-30
 **Last Updated:** 2026-07-30
 
@@ -274,7 +274,115 @@ Mandanten noch Login. Alle Endpunkte folgen dem bestehenden Muster der übrigen 
 - PROJ-22 bis PROJ-25 bauen auf den hier entstehenden importierten Ergebnissen auf.
 
 ## QA Test Results
-_To be added by /qa_
+
+**Tested:** 2026-07-30
+**Backend:** FastAPI (`TestClient`, env `Dashboard`), Frontend: statischer Code-Review (kein laufender Dev-Server in dieser Session)
+**Tester:** QA Engineer (AI)
+**Methode:** Code-Review gegen jedes Akzeptanzkriterium + gezielte Reproduktionsskripte gegen die echte Test-DB (`TestClient` + `psycopg`), automatisierte Suite (`pytest`), ESLint.
+
+### Automatisierte Tests
+- `backend/tests/test_hal_import.py`, `backend/tests/test_hal_parser.py`: 31/31 grün.
+- Gesamte Backend-Suite (`backend/tests`, ohne das netzwerkgebundene `test_hal_sync.py`): 284/284 grün — keine Regression durch PROJ-21.
+- `npm run lint` im `nextjs_app`: 5 Errors/1 Warning, aber alle in Dateien **außerhalb** dieses Features (`batches/page.tsx`, `entwuerfe/[id]/page.tsx`, `batch-ausfuehrung.tsx`, `theme-toggle.tsx`, `use-mobile.ts`) — vorbestehend, keine Regression.
+
+### Acceptance Criteria Status
+
+#### Import und Provenienz
+- [x] Mehrere `.md` oder genau eine `.zip` wird akzeptiert.
+- [x] Andere Dateitypen einzeln mit „Dateityp wird nicht unterstützt.“ gemeldet.
+- [x] Ein Parserfehler blockiert Geschwisterdateien nicht (bestätigt durch Test + Probe) — **außer** im Fall von BUG-1 (siehe unten).
+- [x] Zusammenfassung zeigt genau einen Status pro Datei.
+- [x] Herkunftspfad, Hash, Importzeitpunkt werden gespeichert.
+- [x] Gleicher Pfad + gleicher Hash ⇒ `unverändert`, kein Duplikat.
+- [x] Gleicher Pfad + geänderter Hash ⇒ neue Importversion, alte bleibt im Audit-Trail.
+- [ ] BUG: ZIP-Pfade, die das Archiv verlassen wollen, werden zwar sicher **abgelehnt** (kein Escape, `zf.read()` wird für sie nie aufgerufen), aber **nicht** mit der geforderten Meldung „Unsicherer Dateipfad im Archiv.“ gemeldet — siehe BUG-2.
+
+#### Mindestvertrag und Datenqualität
+- [x] Minimalvertrag wird geprüft, fehlende Pflichtfelder → `fehlerhaft`.
+- [x] Ausführliches Tabellenformat + kompaktes KPI-Format werden unterstützt (Parser-Tests grün).
+- [x] Optionale Felder fehlen ohne Fehler, erscheinen als `null` (Frontend zeigt „–“).
+- [x] CAGR-Ableitung inkl. `Net Return ≤ -100%` / ungültiger Zeitraum → nicht verfügbar (`_compute_cagr`, geprüft).
+- [x] Calmar `CAGR / abs(MDD)`, `0`-Drawdown → nicht verfügbar.
+- [ ] BUG: Vergleichbarkeitsprüfung (`is_comparable`) prüft für HAL-Zeilen nur `fee_pct` und `slippage_ticks` — **`sizing_model` fehlt in der Prüfung komplett**, obwohl die AC explizit „Gebühren, Slippage und Sizing-Modell vollständig“ verlangt. Da der Parser `sizing_model` zusätzlich nie befüllt (siehe Non-Blocking Findings), ist dieser Punkt aktuell praktisch folgenlos, aber die Spec-Abweichung besteht im Code. Ein Abgleich „mit der aktiven Vergleichsgruppe“ (Kohorten-Vergleich) ist zudem gar nicht implementiert — es wird nur auf Feld-Vollständigkeit geprüft, nicht auf Übereinstimmung mit anderen Zeilen.
+
+#### Strategiezuordnung
+- [ ] BUG (Critical): Siehe **BUG-1** — kein Datei-Identifier wird geparst, kein Quellenlink-Matching implementiert (`_SOURCE_PATTERN`/`source_match` in `hal_parser.py` wird geparst und dann verworfen, nie im `ParsedResult` gespeichert), und bei eindeutigem Namenstreffer wird **sofort und still zugewiesen** (`assignment_origin="suggestion_accepted"`) statt nur einen Vorschlag zu machen. Mehrfachtreffer werden nicht erkannt — die Query nimmt einfach `ORDER BY version_number DESC LIMIT 1`.
+- [x] Nutzer kann ein unzugeordnetes Ergebnis manuell zuweisen (`/hal-results/{id}/assign`, Frontend-Zuordnungs-Tab) — funktioniert für Ergebnisse, die tatsächlich in der Queue landen.
+- [x] Zuordnung ist sichtbar/änderbar (`assignment_origin`, Reassign/Unassign getestet).
+
+#### Screening
+- [x] HAL-Importe erscheinen in `/results`, Ergebnistyp „HAL-Import“ sichtbar/filterbar.
+- [x] Sortino-Spalte vorhanden.
+- [x] Standardsortierung Calmar absteigend, `null` immer am Ende (unabhängig von Sortierrichtung).
+- [x] Trades/Jahr wird aus Trade-Anzahl + exakter Dauer berechnet.
+- [x] `< 6 Trades/Jahr` → Badge „Niedrige Aktivität“, Zeile bleibt sichtbar.
+- [x] Erfolgsgruppen-Schwellen (Calmar ≥ 0,8, Sortino ≥ 0,5, ≥ 6 Trades/Jahr) serverseitig zentral definiert (`schemas/hal_import.py`).
+- [ ] BUG: Schnellfilter fehlt für **Timeframe** (in der AC-Liste explizit gefordert, im Frontend nicht vorhanden). MTS-Eignung/Robustheitsstatus-Filter fehlen ebenfalls, sind aber aktuell mangels Datenquelle (`mts_compatibility`/`robustness_status` immer `null`) ohnehin funktionslos — vermutlich bewusst auf PROJ-22 ff. verschoben, aber nicht in der Spec vermerkt.
+- [x] Calmar bleibt visuell dominant (fett), kein Composite Score, keine automatische Empfehlung.
+
+#### Manuelle Shortlist
+- [x] Stern pro Zeile setzt/entfernt Shortlist (`PUT`/`DELETE /shortlist/{id}`), getestet.
+- [x] Shortlist an Strategieversion gebunden, alle Runs derselben Version zeigen denselben Zustand.
+- [x] Neue Version übernimmt Shortlist-Zustand nicht automatisch (kein Auto-Copy im Code).
+- [x] Setzen/Entfernen verändert keine Metrikdaten (reine Zusatztabelle).
+
+### Edge Cases Status
+- [x] ZIP mit gültigen/fehlerhaften/fremden Dateien: gültige werden importiert, andere einzeln gemeldet — **außer** bei Wiederholungs-Uploads, siehe BUG-3.
+- [ ] BUG: „Zwei Dateien haben denselben Strategienamen, aber unterschiedliche Quellen: beide bleiben unzugeordnet“ — empirisch widerlegt, siehe BUG-1.
+- [x] `0` Trades bleibt sichtbar, Aktivität niedrig, Ratios bleiben leer wo nicht berechenbar.
+- [x] Kompaktes Format mit mehreren KPIs pro Zeile: bekannte Werte gelesen, unklare nicht geraten (Parser-Tests).
+- [x] Testzeitraum < 1 Jahr: Trades/Jahr wird annualisiert (`_compute_trades_per_year`).
+- [x] Gelöschte/nicht verfügbare Strategieversion zeigt „Strategieversion nicht verfügbar“ im Frontend-Badge — Backend-Logik vorhanden; über die App aktuell nicht auslösbar, da kein Lösch-Endpoint für Strategieversionen existiert (kein funktionales Risiko heute).
+
+### Security Audit Results
+- [x] Kein Auth-Layer nötig (App ist laut PRD single-tenant, kein Mandant) — konsistent mit übrigen Routen.
+- [x] Zip-Slip: Pfade, die das Archiv verlassen wollen, werden vor jedem `zf.read()` abgefangen (`_safe_zip_path`) — kein tatsächliches Escape möglich, nur die Nutzermeldung ist falsch (BUG-2).
+- [x] ZIP-Größenlimit (100 MB unkomprimiert) und Item-Limit (500) vorhanden.
+- [x] Alle SQL-Statements parametrisiert, keine f-String-SQL gefunden.
+- [x] Datei-Uploads werden nur im Speicher verarbeitet, keine Persistenz auf Platte, kein MinIO-Zugriff nötig.
+- [ ] BUG (Critical, siehe BUG-3): Nicht-parametrisierte Eingabe kann keinen SQL-Angriff auslösen, aber eine unbehandelte DB-Exception (`UniqueViolation`) führt zu einem **500 statt einer sauberen Fehlerbehandlung** und reißt bereits erfolgreich verarbeitete Geschwisterdateien im selben Request per Rollback mit — kein Sicherheits-, aber ein Verfügbarkeits-/Datenintegritätsproblem.
+
+### Bugs Found
+
+#### BUG-1: Stille Auto-Zuordnung statt Vorschlag bei Namensgleichheit, keine Mehrfachtreffer-Prüfung
+- **Severity:** Critical
+- **Steps to Reproduce:**
+  1. Zwei eingefrorene Strategieversionen mit identischem `snapshot->>'name'` anlegen (z. B. zwei unabhängige Strategiefamilien, die zufällig „Trendfolge SMA Kreuz“ heißen).
+  2. Eine HAL-Markdown-Datei mit demselben Strategienamen importieren (`POST /hal-results/import`).
+  3. Erwartet laut AC: Status `unzugeordnet` (mehrere Treffer ⇒ kein Vorschlag, keine stille Auswahl).
+  4. Tatsächlich (empirisch reproduziert mit `TestClient`): `hal_results.strategy_version_id` wird sofort auf eine der beiden Versionen gesetzt (`ORDER BY version_number DESC LIMIT 1`), `assignment_origin = 'suggestion_accepted'`, obwohl niemand einen Vorschlag bestätigt hat. Der Eintrag erscheint **nicht** in `/hal-results/unassigned` und damit nie im Zuordnungs-Tab.
+  - Zusätzlich: Selbst im Eindeutig-Treffer-Fall ist das laut Tech-Design (Punkt 12: „Eine stille Falschzuordnung wäre schlimmer als gar keine“) explizit ein „Vorschlag“, kein Auto-Assign — das Frontend (`AssignmentTab`) ist bereits korrekt für den Vorschlag-Flow gebaut („Vorschlag übernehmen“-Button), wird durch dieses Backend-Verhalten aber nie erreicht.
+  - Zusätzlich: `_SOURCE_PATTERN`/„Quelle“-Link wird in `hal_parser.py` geparst (`source_match`), aber nirgends im `ParsedResult` gespeichert oder für Matching verwendet — das in der AC geforderte Quellenlink-Matching existiert schlicht nicht.
+- **Priority:** Fix before deployment
+
+#### BUG-2: Falsche Fehlermeldung bei unsicherem ZIP-Pfad
+- **Severity:** Medium
+- **Steps to Reproduce:**
+  1. ZIP mit einem Eintrag hochladen, dessen Pfad das Archiv verlassen will (z. B. `../evil.md`).
+  2. Erwartet laut AC: „Unsicherer Dateipfad im Archiv.“
+  3. Tatsächlich (empirisch reproduziert): Meldung lautet „Dateityp wird nicht unterstützt.“ — identisch mit der Meldung für schlicht falsche Dateitypen. Der String „Unsicherer Dateipfad im Archiv.“ kommt im gesamten Backend nirgends vor (`grep` bestätigt).
+  - Kein Sicherheitsrisiko (Datei wird nicht gelesen/extrahiert), aber irreführend bei einer echten Zip-Slip-Attacke oder einem defekten Export — Nutzer kann Ursache nicht unterscheiden.
+- **Priority:** Fix before deployment
+
+#### BUG-3: Erneuter Upload eines bereits abgelehnten Files (gleicher Pfad + Hash) crasht den gesamten Importlauf (500) und rollt bereits importierte Geschwisterdateien zurück
+- **Severity:** Critical
+- **Steps to Reproduce:**
+  1. Ein ZIP mit einer nicht unterstützten Datei (z. B. `readme.pdf`) und einer gültigen `.md`-Datei hochladen → beide werden korrekt verarbeitet (`fehlerhaft` / `importiert`).
+  2. Denselben Ordner/dasselbe ZIP ein zweites Mal hochladen (realistischer Alltagsfall: Nutzer lädt denselben Hal-Export erneut hoch, weil er neue Ergebnisse ergänzt hat).
+  3. Erwartet laut AC: die unveränderte `.pdf` wird wie beim ersten Mal einfach wieder als `fehlerhaft`/nicht unterstützt gemeldet (Dedup-Verhalten wie bei validen Dateien).
+  4. Tatsächlich (empirisch reproduziert): `_reject_file` prüft — anders als `_process_one_file` für valide Dateien — **nicht** auf einen bereits existierenden `(origin_path, content_hash)`-Eintrag, sondern versucht immer einen Insert mit `import_version = 1`. Das verletzt den Unique Index `uq_hal_imported_files_path_hash_version` und wirft eine unbehandelte `psycopg.errors.UniqueViolation` → FastAPI liefert `500 Internal Server Error`. Da `import_hal_results` alle Dateien eines Requests in **einer** Transaktion verarbeitet (`with transaction() as cur:`), wird beim Fehler die komplette Transaktion zurückgerollt — auch bereits erfolgreich verarbeitete valide Dateien desselben Requests gehen verloren. Das widerspricht direkt der AC „Jede Datei wird unabhängig verarbeitet; ein Parserfehler verhindert nicht den Import gültiger Geschwisterdateien.“ Bei ca. 300 Dateien pro Ordner (Kernszenario der Spec) ist ein wiederholter Upload nach dem ersten Mal praktisch garantiert, sobald der Ordner auch nur eine einzige nicht unterstützte Datei enthält.
+- **Priority:** Fix before deployment
+
+### Non-Blocking Findings (nicht als eigene BUGs gezählt, aber notierenswert)
+- `sizing_model` wird vom Parser nie befüllt (kein Lesepfad in `hal_parser.py` dafür vorhanden), obwohl das Datenmodell und die Vergleichbarkeitsprüfung dieses Feld referenzieren.
+- Namensbasiertes Matching in `_insert_hal_result`/`_suggest_version` ist ein exakter String-Vergleich, nicht „normalisiert“ (kein Trim/Case-Fold) wie in der AC gefordert — in der Praxis meist unkritisch, da Strategienamen aus derselben App-Quelle stammen.
+
+### Summary
+- **Acceptance Criteria:** 25/29 geprüfte Teilkriterien bestanden, 4 mit Bugs (Zuordnung-Eindeutigkeit, ZIP-Fehlermeldung, Vergleichbarkeitsprüfung `sizing_model`, Timeframe-Filter).
+- **Bugs Found:** 3 total (2 Critical, 1 Medium)
+- **Security:** Keine Auth-relevanten Lücken (App ist single-tenant); ein Verfügbarkeits-/Integritätsproblem (BUG-3) mit Sicherheits-Nebenaspekt (unbehandelte Exception statt kontrollierter Fehlerantwort).
+- **Production Ready:** NO
+- **Recommendation:** BUG-1 und BUG-3 vor Deployment fixen (beide sind Kernversprechen der Spec: keine stille Falschzuordnung, kein Abbruch des gesamten Imports durch eine einzelne Datei). BUG-2 sollte im selben Rutsch mit BUG-3 behoben werden (beide sitzen in derselben Reject-Pipeline). Timeframe-Filter und `sizing_model`-Lücke können optional in derselben Iteration mitgenommen werden.
 
 ## Deployment
 _To be added by /deploy_

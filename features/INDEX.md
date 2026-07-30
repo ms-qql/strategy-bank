@@ -24,9 +24,9 @@
 | PROJ-18 | Einfachauswahl für den Richtungsmodus | Deployed (Frontend + Backend, 2026-07-16, v0.2.23) | P0 | PROJ-4 |
 | PROJ-19 | Hal-Vault-Sync für Quellen + Feldbereinigung | Deployed (2026-07-29, v0.2.31) | P1 | PROJ-9, PROJ-2, PROJ-3 |
 | PROJ-20 | PDF, EPUB und MOBI als Markdown importieren | Deployed (Mehrfach-Upload, 2026-07-29, v0.2.34) | P1 | PROJ-1, PROJ-2, PROJ-14 |
-| PROJ-21 | HAL-Import und Ergebnis-Screening | Architected | P0 | PROJ-3, PROJ-7 |
+| PROJ-21 | HAL-Import und Ergebnis-Screening | In Review | P0 | PROJ-3, PROJ-7 |
 | PROJ-22 | Regime-Analyse | Architected | P1 | PROJ-21 |
-| PROJ-23 | Erfolgsfaktorenanalyse | Planned | P1 | PROJ-2, PROJ-3, PROJ-21 |
+| PROJ-23 | Erfolgsfaktorenanalyse | Architected | P1 | PROJ-21 |
 | PROJ-24 | Robustheitslabor | Planned | P2 | PROJ-3, PROJ-21 |
 | PROJ-25 | Crypto-MTS-Forecast-Varianten | Planned | P3 | PROJ-10, PROJ-21, PROJ-24 |
 
