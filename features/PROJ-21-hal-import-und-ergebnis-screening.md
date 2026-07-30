@@ -1,6 +1,6 @@
 # PROJ-21: HAL-Import und Ergebnis-Screening
 
-## Status: In Review
+## Status: Approved
 **Created:** 2026-07-30
 **Last Updated:** 2026-07-30
 
@@ -465,6 +465,21 @@ Mandanten noch Login. Alle Endpunkte folgen dem bestehenden Muster der übrigen 
 **Verifikation:** 50/50 betroffene Backend-Tests und 294/294 Backend-Regressionsfälle grün; `npm run build`, PROJ-21-ESLint und `git diff --check` grün.
 
 **Status:** Bleibt bis zum erneuten vollständigen `/abc-qa` auf **In Review**.
+
+## QA Final Re-Test
+
+**Tested:** 2026-07-30
+
+- **Acceptance Criteria:** 32/32 bestanden.
+- **Backend:** 294/294 Tests grün (ohne den bewusst netzwerkgebundenen `test_hal_sync.py`).
+- **Frontend:** Next.js-Produktionsbuild und PROJ-21-ESLint grün.
+- **Real-Artefakt:** Bestehende HAL-Datei mit deutschem Dezimalformat, Provider-Symbol, Gebühren und Sizing korrekt geparst.
+- **UI-Smoke:** `/api/health`, `/api/results`, `/hal-import` und `/ergebnisse` lokal über den echten Same-Origin-Proxy geprüft; 375, 768 und 1440 px getestet.
+- **Security:** Zip-Slip-Abwehr, Upload-Limits und parametrisierte SQL-Zugriffe unverändert wirksam; Single-Tenant ohne Auth entspricht dem Tech-Design.
+- **Bugs:** 0 Critical, 0 High, 0 Medium, 1 Low.
+- **Low:** Auf 375 px werden längere Beschreibungstexte auf der HAL-Import-Seite rechts leicht abgeschnitten; Navigation und Upload bleiben nutzbar.
+- **Production Ready:** **YES**
+- **Status:** **Approved**
 
 ## Deployment
 _To be added by /deploy_
