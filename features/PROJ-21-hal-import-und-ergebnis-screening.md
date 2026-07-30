@@ -384,5 +384,72 @@ Mandanten noch Login. Alle Endpunkte folgen dem bestehenden Muster der übrigen 
 - **Production Ready:** NO
 - **Recommendation:** BUG-1 und BUG-3 vor Deployment fixen (beide sind Kernversprechen der Spec: keine stille Falschzuordnung, kein Abbruch des gesamten Imports durch eine einzelne Datei). BUG-2 sollte im selben Rutsch mit BUG-3 behoben werden (beide sitzen in derselben Reject-Pipeline). Timeframe-Filter und `sizing_model`-Lücke können optional in derselben Iteration mitgenommen werden.
 
+## QA Re-Test nach Bugfixes
+
+**Tested:** 2026-07-30
+**Ergebnis:** Die drei ursprünglich reproduzierten Fehlerpfade sind behoben, PROJ-21 ist wegen neuer beziehungsweise verbliebener High-Bugs aber weiterhin nicht production-ready.
+
+### Verifikation der Fixes
+
+- [x] Eindeutiger normalisierter Namenstreffer bleibt unzugeordnet und wird nur vorgeschlagen.
+- [x] Gleicher Name in mehreren Strategiefamilien erzeugt keinen Vorschlag und keine stille Auswahl.
+- [x] Wiederholter Upload eines ZIPs mit abgelehnter Datei liefert `unverändert` statt `500`; gültige Geschwisterdateien bleiben erhalten.
+- [x] Unsicherer ZIP-Pfad wird mit „Unsicherer Dateipfad im Archiv.“ gemeldet.
+- [x] `sizing_model` wird in die Vollständigkeitsprüfung von `is_comparable` einbezogen.
+- [x] Timeframe-Schnellfilter ist vorhanden.
+
+### Automatisierte Checks
+
+- PROJ-21 Backend: **34/34 grün** (`test_hal_import.py`, `test_hal_parser.py`).
+- Backend-Regressionssuite ohne bewusst netzwerkgebundenes `test_hal_sync.py`: **287/287 grün**.
+- `git diff --check`: **grün**.
+- Next.js `npm run build`: **fehlgeschlagen** wegen drei TypeScript-Fehlern in `app/ergebnisse/page.tsx`.
+- ESLint: weiterhin 5 vorbestehende Errors/1 Warning außerhalb PROJ-21; keine zusätzlichen Lint-Funde in PROJ-21.
+- Browser-/Responsive-Test nicht sinnvoll durchführbar, solange der Produktionsbuild fehlschlägt.
+
+### Verbliebene Bugs
+
+#### BUG-4: PROJ-21-Ergebnisseite blockiert den Frontend-Produktionsbuild
+
+- **Severity:** High
+- **Reproduktion:** `cd nextjs_app && npm run build`
+- **Ist:** TypeScript meldet in `app/ergebnisse/page.tsx` an den Zeilen 742, 764 und 823, dass `TooltipTrigger` die Prop `asChild` nicht unterstützt. Der Build endet mit Exit-Code 1.
+- **Soll:** Der Next.js-Produktionsbuild läuft durch.
+- **Priority:** Fix before deployment
+
+#### BUG-5: Ungültiges Update wird als aktualisiert gemeldet und blendet das letzte gültige Ergebnis aus
+
+- **Severity:** High
+- **Reproduktion:**
+  1. Gültige HAL-Datei importieren.
+  2. Unter demselben Pfad geänderten, aber unvollständigen Inhalt hochladen.
+  3. API-Antwort und `/results` prüfen.
+- **Ist:** Der zweite Import erhält Status `aktualisiert` plus Parserfehler. Die bisherige Importversion wird vor dem Parsen auf `is_current=false` gesetzt, die ungültige neue Datei auf `is_current=true`; da kein `hal_results`-Datensatz entsteht, verschwindet das zuvor gültige Ergebnis vollständig aus `/results`.
+- **Soll:** Die neue Datei erhält `fehlerhaft`; das letzte gültige Ergebnis bleibt die aktuelle Analyseversion.
+- **Empirisch:** Zweiter Request `201`, Datei-Status `aktualisiert`, `visible_results: 0`.
+- **Priority:** Fix before deployment
+
+#### BUG-1 teilweise offen: Identifier- und Quellenlink-Matching fehlen
+
+- **Severity:** High
+- **Behoben:** Keine stille Auto-Zuordnung mehr; normalisierte Namensvorschläge erkennen Mehrdeutigkeit zwischen Strategiefamilien.
+- **Offen:** Der Parser übernimmt keinen stabilen Strategieversions-Identifier. `source_match` wird weiterhin nur erzeugt und verworfen; der Quellenlink wird nicht für Vorschläge verwendet. Damit sind die ersten beiden Zuordnungs-ACs nur teilweise erfüllt.
+- **Priority:** Fix before deployment
+
+### Weitere offene AC-Abweichungen
+
+- **Medium:** `sizing_model` wird zwar jetzt geprüft, aber vom HAL-Parser nie befüllt. HAL-Ergebnisse können deshalb aktuell nie direkt vergleichbar oder Teil der Erfolgsgruppe werden.
+- **Medium:** Vergleichbarkeit prüft nur Feldvollständigkeit, nicht die geforderte Übereinstimmung mit der aktiven Vergleichsgruppe.
+- **Medium:** Schnellfilter für MTS-Eignung und Robustheitsstatus fehlen weiterhin; die zugehörigen Backend-Felder sind immer `null`.
+
+### Re-Test Summary
+
+- **Ursprüngliche Bugs:** BUG-2 und BUG-3 vollständig behoben; BUG-1 teilweise behoben.
+- **Neue Bugs:** 2 High.
+- **Verbliebene Abweichungen:** 1 High, 3 Medium.
+- **Security:** Zip-Slip-Abwehr weiterhin wirksam; keine neue Security-Lücke gefunden.
+- **Production Ready:** **NO**
+- **Status:** **In Review**
+
 ## Deployment
 _To be added by /deploy_
