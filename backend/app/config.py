@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     # ließ ~50% der Extraktionen per subprocess.TimeoutExpired fehlschlagen.
     extraction_timeout_seconds: float = 180.0
 
+    # OpenCode läuft mit lokalem Host-Binary + gemeinsamer Session-SQLite-DB
+    # (~/.local/share/opencode/opencode.db) — bei vielen parallelen Extraktionen
+    # (Bulk-Upload) konkurrieren die Subprozesse um dieselbe State-DB. Begrenzt
+    # die Zahl gleichzeitig laufender OpenCode-Aufrufe und federt verbleibende
+    # transiente Kollisionen per Retry ab.
+    extraction_max_concurrency: int = 2
+    extraction_max_attempts: int = 2
+
     source_max_bytes: int = 25 * 1024 * 1024  # 25 MB, siehe PROJ-20
 
     # CORS: Dev-Default fürs Next.js-Frontend (Port 3000). Prod via .env

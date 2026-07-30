@@ -92,15 +92,16 @@ async def create_source(
 
 
 @router.get("", response_model=list[SourceListItem])
-def list_sources(limit: int = 50) -> list[dict]:
+def list_sources(limit: int = 50, offset: int = 0) -> list[dict]:
     limit = min(max(limit, 1), 200)
+    offset = max(offset, 0)
     return run_query(
         """
         SELECT id, source_hash, source_type, file_name AS filename,
                extraction_status, created_at AS captured_at
-        FROM sources ORDER BY created_at DESC LIMIT %s
+        FROM sources ORDER BY created_at DESC LIMIT %s OFFSET %s
         """,
-        [limit],
+        [limit, offset],
     )
 
 

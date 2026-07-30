@@ -61,6 +61,7 @@ const STATUS_VARIANT: Record<
 };
 
 const POLL_MS = 2000;
+const PAGE_SIZE = 50;
 
 type ExtState =
   | { kind: "idle" }
@@ -81,6 +82,8 @@ export function QuellenView() {
   const [sources, setSources] = useState<Source[]>([]);
   const [ladeliste, setLadeliste] = useState(true);
   const [listenfehler, setListenfehler] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [ladeMehr, setLadeMehr] = useState(false);
 
   const [tab, setTab] = useState<"text" | "file">("text");
   const [text, setText] = useState("");
@@ -95,8 +98,12 @@ export function QuellenView() {
   );
 
   useEffect(() => {
-    apiGet<unknown>("/sources")
-      .then((data) => setSources(sourceListSchema.parse(data)))
+    apiGet<unknown>(`/sources?limit=${PAGE_SIZE}&offset=0`)
+      .then((data) => {
+        const parsed = sourceListSchema.parse(data);
+        setSources(parsed);
+        setHasMore(parsed.length === PAGE_SIZE);
+      })
       .catch((e) =>
         setListenfehler(
           e instanceof ApiError ? e.message : "Quellen konnten nicht geladen werden.",
@@ -104,6 +111,24 @@ export function QuellenView() {
       )
       .finally(() => setLadeliste(false));
   }, []);
+
+  async function ladeWeitereQuellen() {
+    setLadeMehr(true);
+    try {
+      const data = await apiGet<unknown>(
+        `/sources?limit=${PAGE_SIZE}&offset=${sources.length}`,
+      );
+      const parsed = sourceListSchema.parse(data);
+      setSources((prev) => [...prev, ...parsed]);
+      setHasMore(parsed.length === PAGE_SIZE);
+    } catch (e) {
+      setListenfehler(
+        e instanceof ApiError ? e.message : "Quellen konnten nicht geladen werden.",
+      );
+    } finally {
+      setLadeMehr(false);
+    }
+  }
 
   useEffect(() => {
     const handles = pollHandles.current;
@@ -418,6 +443,7 @@ export function QuellenView() {
           ) : sources.length === 0 ? (
             <p className="text-sm text-muted-foreground">Noch keine Quelle erfasst.</p>
           ) : (
+            <div className="max-h-[70vh] overflow-y-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -526,6 +552,15 @@ export function QuellenView() {
                 })}
               </TableBody>
             </Table>
+            </div>
+          )}
+          {!ladeliste && !listenfehler && hasMore && (
+            <div className="mt-3 flex justify-center">
+              <Button variant="outline" size="sm" onClick={ladeWeitereQuellen} disabled={ladeMehr}>
+                {ladeMehr && <Loader className="mr-1 h-3.5 w-3.5 animate-spin" />}
+                Weitere laden
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

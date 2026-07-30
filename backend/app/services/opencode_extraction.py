@@ -10,6 +10,8 @@ import logging
 import re
 import subprocess
 import tempfile
+import threading
+import time
 import uuid as _uuid
 from datetime import datetime, timezone
 from uuid import UUID
@@ -20,6 +22,11 @@ from ..db import run_command, transaction
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 logger = logging.getLogger(__name__)
+
+# Begrenzt gleichzeitig laufende OpenCode-Subprozesse (siehe Kommentar bei
+# Settings.extraction_max_concurrency) — Semaphore statt Queue, da FastAPI
+# BackgroundTasks bereits im Threadpool laufen.
+_opencode_semaphore = threading.Semaphore(settings.extraction_max_concurrency)
 
 _REQUIRED_LOCKED_FIELDS = [
     "entry_rule",
@@ -100,22 +107,23 @@ def run_opencode(prompt: str) -> str:
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".md") as prompt_file:
         prompt_file.write(prompt)
         prompt_file.flush()
-        result = subprocess.run(
-            [
-                settings.opencode_binary,
-                "run",
-                "Folge exakt den Anweisungen in der angehängten Datei.",
-                "--file",
-                prompt_file.name,
-                "--format",
-                "json",
-                "-m",
-                settings.extraction_model,
-            ],
-            capture_output=True,
-            text=True,
-            timeout=settings.extraction_timeout_seconds,
-        )
+        with _opencode_semaphore:
+            result = subprocess.run(
+                [
+                    settings.opencode_binary,
+                    "run",
+                    "Folge exakt den Anweisungen in der angehängten Datei.",
+                    "--file",
+                    prompt_file.name,
+                    "--format",
+                    "json",
+                    "-m",
+                    settings.extraction_model,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=settings.extraction_timeout_seconds,
+            )
     if result.returncode != 0:
         raise RuntimeError(f"OpenCode-Prozess beendet mit Code {result.returncode}: {result.stderr[:500]}")
 
@@ -314,11 +322,28 @@ def execute_extraction(run_id: UUID, source_id: UUID, source_content: str, sourc
 
 
 def _execute_extraction(run_id: UUID, source_id: UUID, source_content: str, source_hash: str) -> None:
-    try:
-        raw_output = run_opencode(build_prompt(source_content))
-        parsed = parse_model_output(raw_output)
-    except Exception as exc:
-        _mark_failed(run_id, source_id, exc, "provider_or_parser")
+    prompt = build_prompt(source_content)
+    last_exc: Exception | None = None
+    parsed: dict | None = None
+    for attempt in range(1, settings.extraction_max_attempts + 1):
+        try:
+            raw_output = run_opencode(prompt)
+            parsed = parse_model_output(raw_output)
+            last_exc = None
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt < settings.extraction_max_attempts:
+                logger.warning(
+                    "Extraction attempt %s/%s failed run_id=%s error_type=%s — retrying",
+                    attempt,
+                    settings.extraction_max_attempts,
+                    run_id,
+                    type(exc).__name__,
+                )
+                time.sleep(2 * attempt)
+    if last_exc is not None or parsed is None:
+        _mark_failed(run_id, source_id, last_exc or RuntimeError("Extraktion ohne Ergebnis."), "provider_or_parser")
         return
 
     strategies = parsed["strategies"]
