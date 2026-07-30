@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
-import { apiDelete, apiGet, apiPost, ApiError } from "@/lib/api-client";
+import { apiDelete, apiGet, apiPost, apiUrl, ApiError } from "@/lib/api-client";
 import {
   resultRowSchema,
   RESULT_TYPE_LABELS,
@@ -13,9 +13,9 @@ import {
 } from "@/lib/schemas/results";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Card,
   CardContent,
@@ -31,7 +31,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  ArrowLeft,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
@@ -42,8 +41,9 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Trash2,
+  Star,
+  Info,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 
 type SortDir = "asc" | "desc" | null;
 
@@ -56,13 +56,13 @@ const METRIC_FIELDS = [
   "net_profit_pct",
   "cagr_pct",
   "trade_count",
+  "trades_per_year",
   "max_drawdown_pct",
   "sharpe_ratio",
+  "sortino_ratio",
   "profit_factor",
   "calmar_ratio",
 ] as const;
-
-const DEFAULT_THRESHOLD = 24;
 
 const STATUS_BADGE_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   erfolgreich: "default",
@@ -74,13 +74,7 @@ const STATUS_BADGE_VARIANT: Record<string, "default" | "secondary" | "destructiv
   läuft: "secondary",
 };
 
-function SortIcon({
-  field,
-  sort,
-}: {
-  field: string;
-  sort: SortState | null;
-}) {
+function SortIcon({ field, sort }: { field: string; sort: SortState | null }) {
   if (!sort || sort.field !== field) {
     return <ArrowUpDown className="ml-1 inline-block h-3 w-3 opacity-30" />;
   }
@@ -114,8 +108,6 @@ function SortableHead({
 }
 
 export default function ErgebnissePage() {
-  const router = useRouter();
-
   const [rows, setRows] = useState<ResultRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -127,12 +119,18 @@ export default function ErgebnissePage() {
   const [filterInstrument, setFilterInstrument] = useState("");
   const [filterVersion, setFilterVersion] = useState("");
   const [filterCategory, setFilterCategory] = useState("");
+  const [filterTimeframe, setFilterTimeframe] = useState("");
   const [filterDirection, setFilterDirection] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterResultType, setFilterResultType] = useState("");
+  const [filterMtsCompatibility, setFilterMtsCompatibility] = useState("");
+  const [filterRobustnessStatus, setFilterRobustnessStatus] = useState("");
+  const [filterSuccessGroup, setFilterSuccessGroup] = useState(false);
+  const [filterShortlisted, setFilterShortlisted] = useState(false);
 
-  const [sort, setSort] = useState<SortState | null>(null);
-  const [threshold, setThreshold] = useState(DEFAULT_THRESHOLD);
+  const [sort, setSort] = useState<SortState>({ field: "calmar_ratio", dir: "desc" });
+
+  const [togglingStar, setTogglingStar] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -160,15 +158,25 @@ export default function ErgebnissePage() {
     const directions = new Set<string>();
     const statuses = new Set<string>();
     const resultTypes = new Set<string>();
+    const timeframes = new Set<string>();
+    const mtsCompatibilities = new Set<string>();
+    const robustnessStatuses = new Set<string>();
     for (const r of rows) {
       strategies.add(r.strategy_name);
-      versions.add(r.strategy_version_number);
+      if (r.strategy_version_number !== null)
+        versions.add(r.strategy_version_number);
       instruments.add(r.instrument);
-      directions.add(r.direction);
-      statuses.add(r.status);
+      if (r.direction) directions.add(r.direction);
+      if (r.status) statuses.add(r.status);
       resultTypes.add(r.result_type);
+      if (r.timeframe) timeframes.add(r.timeframe);
+      if (r.mts_compatibility) mtsCompatibilities.add(r.mts_compatibility);
+      if (r.robustness_status) robustnessStatuses.add(r.robustness_status);
     }
-    return { strategies, versions, instruments, directions, statuses, resultTypes };
+    return {
+      strategies, versions, instruments, directions, statuses, resultTypes,
+      timeframes, mtsCompatibilities, robustnessStatuses,
+    };
   }, [rows]);
 
   const filtered = useMemo(() => {
@@ -187,8 +195,22 @@ export default function ErgebnissePage() {
       result = result.filter((r) => r.status === filterStatus);
     if (filterResultType)
       result = result.filter((r) => r.result_type === filterResultType);
+    if (filterTimeframe)
+      result = result.filter((r) => r.timeframe === filterTimeframe);
+    if (filterMtsCompatibility)
+      result = result.filter((r) => r.mts_compatibility === filterMtsCompatibility);
+    if (filterRobustnessStatus)
+      result = result.filter((r) => r.robustness_status === filterRobustnessStatus);
+    if (filterSuccessGroup)
+      result = result.filter((r) => r.success_group);
+    if (filterShortlisted)
+      result = result.filter((r) => r.shortlisted);
     return result;
-  }, [rows, filterStrategy, filterVersion, filterInstrument, filterCategory, filterDirection, filterStatus, filterResultType]);
+  }, [
+    rows, filterStrategy, filterVersion, filterInstrument, filterCategory,
+    filterDirection, filterStatus, filterResultType, filterTimeframe,
+    filterMtsCompatibility, filterRobustnessStatus, filterSuccessGroup, filterShortlisted,
+  ]);
 
   const sorted = useMemo(() => {
     if (!sort) return filtered;
@@ -197,7 +219,7 @@ export default function ErgebnissePage() {
       const aVal = (a as Record<string, unknown>)[sort.field];
       const bVal = (b as Record<string, unknown>)[sort.field];
       if (aVal === null && bVal === null) return 0;
-      if (aVal === null) return 1; // null sorts to end
+      if (aVal === null) return 1;
       if (bVal === null) return -1;
       return ((aVal as number) - (bVal as number)) * dir;
     });
@@ -206,9 +228,15 @@ export default function ErgebnissePage() {
   const profileFamilies = useMemo(() => {
     const families = new Map<string, ResultRow[]>();
     for (const r of sorted) {
-      const key = r.profile_family_id;
-      if (!families.has(key)) families.set(key, []);
-      families.get(key)!.push(r);
+      if (r.result_type === "HAL-Import") {
+        const key = `hal-${r.profile_name ?? "nicht-vergleichbar"}`;
+        if (!families.has(key)) families.set(key, []);
+        families.get(key)!.push(r);
+      } else {
+        const key = r.profile_family_id ?? `unknown-${r.run_id}`;
+        if (!families.has(key)) families.set(key, []);
+        families.get(key)!.push(r);
+      }
     }
     return [...families.entries()];
   }, [sorted]);
@@ -219,7 +247,7 @@ export default function ErgebnissePage() {
     setSort((prev) => {
       if (!prev || prev.field !== field) return { field, dir: "desc" };
       if (prev.dir === "desc") return { field, dir: "asc" };
-      return null;
+      return { field, dir: "desc" };
     });
   };
 
@@ -231,6 +259,11 @@ export default function ErgebnissePage() {
     setFilterDirection("");
     setFilterStatus("");
     setFilterResultType("");
+    setFilterTimeframe("");
+    setFilterMtsCompatibility("");
+    setFilterRobustnessStatus("");
+    setFilterSuccessGroup(false);
+    setFilterShortlisted(false);
   };
 
   const handleDelete = async (runId: string) => {
@@ -268,8 +301,28 @@ export default function ErgebnissePage() {
     }
   };
 
+  const handleStarToggle = async (strategyId: string, currentlyShortlisted: boolean) => {
+    setTogglingStar(strategyId);
+    try {
+      if (currentlyShortlisted) {
+        await fetch(apiUrl(`/shortlist/${strategyId}`), { method: "DELETE" });
+      } else {
+        await fetch(apiUrl(`/shortlist/${strategyId}`), { method: "PUT" });
+      }
+      setRows(
+        z.array(resultRowSchema).parse(await apiGet<ResultRow[]>("/results")),
+      );
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Shortlist-Änderung fehlgeschlagen.");
+    } finally {
+      setTogglingStar(null);
+    }
+  };
+
   const hasFilters =
-    filterStrategy || filterVersion || filterInstrument || filterCategory || filterDirection || filterStatus || filterResultType;
+    filterStrategy || filterVersion || filterInstrument || filterCategory ||
+    filterDirection || filterStatus || filterResultType || filterTimeframe ||
+    filterMtsCompatibility || filterRobustnessStatus || filterSuccessGroup || filterShortlisted;
 
   if (loading) {
     return (
@@ -281,22 +334,12 @@ export default function ErgebnissePage() {
 
   return (
     <div className="w-full px-4 py-6">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mb-4"
-        onClick={() => router.push("/batches")}
-      >
-        <ArrowLeft className="mr-1 h-4 w-4" />
-        Zurück zu Batches
-      </Button>
-
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Ergebnisvergleich</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {sorted.length} Run{sorted.length !== 1 ? "s" : ""} gefunden — Metriken,
-            Report-Links und Aktivitätskennzeichnung.
+            {sorted.length} Ergebnis{sorted.length !== 1 ? "se" : ""} gefunden
+            {sort && ` — sortiert nach ${_metricLabel(sort.field)} ${sort.dir === "asc" ? "▲" : "▼"}`}
           </p>
         </div>
       </div>
@@ -308,22 +351,8 @@ export default function ErgebnissePage() {
         </Alert>
       )}
 
-      {/* Aktivitätsschwelle */}
+      {/* Filterleiste */}
       <div className="mb-4 flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Label htmlFor="threshold" className="text-sm whitespace-nowrap">
-            Aktivitätsschwelle (Trades)
-          </Label>
-          <Input
-            id="threshold"
-            type="number"
-            min={0}
-            value={threshold}
-            onChange={(e) => setThreshold(Math.max(0, Number(e.target.value) || 0))}
-            className="w-20 h-8 font-mono text-sm"
-          />
-        </div>
-
         <Button
           variant="outline"
           size="sm"
@@ -398,6 +427,37 @@ export default function ErgebnissePage() {
               placeholder="Alle Ergebnisarten"
               renderOption={(v) => RESULT_TYPE_LABELS[v] ?? v}
             />
+            <SelectFilter
+              label="Timeframe"
+              value={filterTimeframe}
+              options={[...uniqueValues.timeframes].sort()}
+              onChange={setFilterTimeframe}
+              placeholder="Alle Timeframes"
+            />
+            <SelectFilter
+              label="MTS-Eignung"
+              value={filterMtsCompatibility}
+              options={[...uniqueValues.mtsCompatibilities].sort()}
+              onChange={setFilterMtsCompatibility}
+              placeholder="Alle MTS-Eignungen"
+            />
+            <SelectFilter
+              label="Robustheitsstatus"
+              value={filterRobustnessStatus}
+              options={[...uniqueValues.robustnessStatuses].sort()}
+              onChange={setFilterRobustnessStatus}
+              placeholder="Alle Robustheitsstatus"
+            />
+            <CheckboxFilter
+              label="Erfolgsgruppe"
+              checked={filterSuccessGroup}
+              onChange={setFilterSuccessGroup}
+            />
+            <CheckboxFilter
+              label="Shortlist"
+              checked={filterShortlisted}
+              onChange={setFilterShortlisted}
+            />
           </CardContent>
         </Card>
       )}
@@ -407,9 +467,10 @@ export default function ErgebnissePage() {
         <Alert className="mb-6">
           <TriangleAlert aria-hidden="true" />
           <AlertDescription>
-            Mehrere Backtest-Profilversionen vorhanden. Runs aus unterschiedlichen
-            Profilgruppen sind nicht direkt vergleichbar. Jede Profilgruppe wird
-            separat dargestellt.
+            Mehrere Backtest-Profilversionen oder HAL-Importe vorhanden. Jede
+            Gruppe wird separat dargestellt. Ergebnisse mit unterschiedlichen
+            Gebühren-, Slippage- oder Sizing-Profilen sind nicht direkt
+            vergleichbar.
           </AlertDescription>
         </Alert>
       )}
@@ -421,7 +482,7 @@ export default function ErgebnissePage() {
             <SearchX className="h-10 w-10 text-muted-foreground" />
             <p className="text-muted-foreground">
               {rows.length === 0
-                ? "Keine Runs vorhanden. Bestätige einen Batch, um Ergebnisse zu erhalten."
+                ? "Keine Ergebnisse vorhanden. Bestätige einen Batch oder importiere HAL-Dateien."
                 : "Keine Ergebnisse für diese Filterkombination."}
             </p>
           </CardContent>
@@ -433,15 +494,20 @@ export default function ErgebnissePage() {
         <ErgebnisGruppe
           key={familyId}
           rows={group}
-          groupLabel={`Profil: ${group[0].profile_name} (v${group[0].profile_version_number})`}
+          groupLabel={
+            familyId.startsWith("hal-")
+              ? `HAL-Importe · ${group[0].profile_name ?? "Nicht vergleichbar"}`
+              : `Profil: ${group[0].profile_name ?? "Unbekannt"} (v${group[0].profile_version_number ?? "?"})`
+          }
           sort={sort}
           onSort={handleSort}
-          threshold={threshold}
           isHighlighted={hasMultipleProfiles}
           deletingRunId={deletingRunId}
           retryingRunId={retryingRunId}
+          togglingStar={togglingStar}
           onDelete={handleDelete}
           onRetry={handleRetry}
+          onStarToggle={handleStarToggle}
         />
       ))}
     </div>
@@ -482,30 +548,57 @@ function SelectFilter({
   );
 }
 
+function CheckboxFilter({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="text-xs font-medium">{label}</Label>
+      <label className="flex items-center gap-2 h-9 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          className="h-4 w-4 rounded border-input"
+        />
+        <span className="text-sm">{checked ? "Aktiv" : "Inaktiv"}</span>
+      </label>
+    </div>
+  );
+}
+
 function ErgebnisGruppe({
   rows,
   groupLabel,
   sort,
   onSort,
-  threshold,
   isHighlighted,
   deletingRunId,
   retryingRunId,
+  togglingStar,
   onDelete,
   onRetry,
+  onStarToggle,
 }: {
   rows: ResultRow[];
   groupLabel: string;
   sort: SortState | null;
   onSort: (field: string) => void;
-  threshold: number;
   isHighlighted: boolean;
   deletingRunId: string | null;
   retryingRunId: string | null;
+  togglingStar: string | null;
   onDelete: (runId: string) => void;
   onRetry: (runId: string) => void;
+  onStarToggle: (strategyId: string, currentlyShortlisted: boolean) => void;
 }) {
-  const activeThreshold = threshold;
+  const isHalGroup = rows[0]?.result_type === "HAL-Import";
 
   return (
     <Card className={`mb-6 ${isHighlighted ? "border-amber-200 dark:border-amber-800" : ""}`}>
@@ -516,62 +609,40 @@ function ErgebnisGruppe({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8" />
               <TableHead>Strategie</TableHead>
               <TableHead>Version</TableHead>
               <TableHead className="hidden sm:table-cell">Kategorie</TableHead>
               <TableHead>Instrument</TableHead>
               <TableHead className="hidden md:table-cell">Richtung</TableHead>
               <TableHead className="hidden md:table-cell">Art</TableHead>
-              <TableHead>Status</TableHead>
+              {!isHalGroup && <TableHead>Status</TableHead>}
               <TableHead className="hidden lg:table-cell">Zeitraum</TableHead>
-              <SortableHead
-                field="net_profit_pct"
-                label="Net Return"
-                sort={sort}
-                onSort={onSort}
-              />
-              <SortableHead
-                field="cagr_pct"
-                label="CAGR"
-                sort={sort}
-                onSort={onSort}
-              />
-              <SortableHead
-                field="trade_count"
-                label="Trades"
-                sort={sort}
-                onSort={onSort}
-              />
-              <SortableHead
-                field="max_drawdown_pct"
-                label="Max DD"
-                sort={sort}
-                onSort={onSort}
-              />
-              <SortableHead
-                field="sharpe_ratio"
-                label="Sharpe"
-                sort={sort}
-                onSort={onSort}
-              />
-              <SortableHead
-                field="profit_factor"
-                label="PF"
-                sort={sort}
-                onSort={onSort}
-              />
-              <SortableHead
-                field="calmar_ratio"
-                label="Calmar"
-                sort={sort}
-                onSort={onSort}
-              />
+              <SortableHead field="net_profit_pct" label="Net Return" sort={sort} onSort={onSort} />
+              <SortableHead field="cagr_pct" label="CAGR" sort={sort} onSort={onSort} />
+              <SortableHead field="trade_count" label="Trades" sort={sort} onSort={onSort} />
+              <SortableHead field="trades_per_year" label="Trd/J" sort={sort} onSort={onSort} />
+              <SortableHead field="max_drawdown_pct" label="Max DD" sort={sort} onSort={onSort} />
+              <SortableHead field="sharpe_ratio" label="Sharpe" sort={sort} onSort={onSort} />
+              <SortableHead field="sortino_ratio" label="Sortino" sort={sort} onSort={onSort} />
+              <SortableHead field="profit_factor" label="PF" sort={sort} onSort={onSort} />
+              <SortableHead field="calmar_ratio" label="Calmar" sort={sort} onSort={onSort} />
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((r) => (
-              <ErgebnisZeile key={r.run_id} row={r} threshold={activeThreshold} deletingRunId={deletingRunId} retryingRunId={retryingRunId} onDelete={onDelete} onRetry={onRetry} />
+              <ErgebnisZeile
+                key={r.run_id}
+                row={r}
+                isHalGroup={isHalGroup}
+                deletingRunId={deletingRunId}
+                retryingRunId={retryingRunId}
+                togglingStar={togglingStar}
+                onDelete={onDelete}
+                onRetry={onRetry}
+                onStarToggle={onStarToggle}
+              />
             ))}
           </TableBody>
         </Table>
@@ -582,54 +653,87 @@ function ErgebnisGruppe({
 
 function ErgebnisZeile({
   row,
-  threshold,
+  isHalGroup,
   deletingRunId,
   retryingRunId,
+  togglingStar,
   onDelete,
   onRetry,
+  onStarToggle,
 }: {
   row: ResultRow;
-  threshold: number;
+  isHalGroup: boolean;
   deletingRunId: string | null;
   retryingRunId: string | null;
+  togglingStar: string | null;
   onDelete: (runId: string) => void;
   onRetry: (runId: string) => void;
+  onStarToggle: (strategyId: string, currentlyShortlisted: boolean) => void;
 }) {
-  const isLowActivity = row.trade_count !== null && row.trade_count < threshold;
   const hasReport = !!row.report_link;
-  const hasMetrics =
-    row.net_profit_pct !== null || row.trade_count !== null;
+  const canStar = !!row.strategy_id;
 
   return (
     <TableRow>
+      <TableCell>
+        {canStar ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={() => onStarToggle(row.strategy_id!, row.shortlisted)}
+            disabled={togglingStar === row.strategy_id}
+          >
+            {togglingStar === row.strategy_id ? (
+              <Loader className="h-3 w-3 animate-spin" />
+            ) : (
+              <Star
+                className={`h-4 w-4 ${
+                  row.shortlisted
+                    ? "fill-amber-400 text-amber-400"
+                    : "text-muted-foreground/30"
+                }`}
+              />
+            )}
+          </Button>
+        ) : (
+          <Star className="h-4 w-4 text-muted-foreground/20" />
+        )}
+      </TableCell>
       <TableCell className="font-medium">
         <div className="max-w-[160px] truncate">{row.strategy_name}</div>
       </TableCell>
       <TableCell className="font-mono text-xs">
-        v{row.strategy_version_number}
+        {row.strategy_version_number !== null ? `v${row.strategy_version_number}` : "–"}
       </TableCell>
       <TableCell className="hidden sm:table-cell">
-        <Badge variant="outline" className="text-xs">
-          {row.category}
-        </Badge>
+        {row.category ? (
+          <Badge variant="outline" className="text-xs">{row.category}</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">–</span>
+        )}
       </TableCell>
       <TableCell className="font-mono text-xs">{row.instrument}</TableCell>
       <TableCell className="hidden md:table-cell">
-        {DIRECTION_MODE_LABELS[row.direction] ?? row.direction}
+        {row.direction ? (DIRECTION_MODE_LABELS[row.direction] ?? row.direction) : "–"}
       </TableCell>
       <TableCell className="hidden md:table-cell">
         <Badge variant="secondary" className="text-xs">
           {RESULT_TYPE_LABELS[row.result_type] ?? row.result_type}
         </Badge>
       </TableCell>
-      <TableCell>
-        <Badge
-          variant={STATUS_BADGE_VARIANT[row.status] ?? "outline"}
-          className="text-xs"
-        >
-          {STATUS_LABELS[row.status] ?? row.status}
-        </Badge>
-      </TableCell>
+      {!isHalGroup && (
+        <TableCell>
+          {row.status ? (
+            <Badge
+              variant={STATUS_BADGE_VARIANT[row.status] ?? "outline"}
+              className="text-xs"
+            >
+              {STATUS_LABELS[row.status] ?? row.status}
+            </Badge>
+          ) : "–"}
+        </TableCell>
+      )}
       <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
         {row.period_start}
         {row.period_end ? ` – ${row.period_end}` : " – offen"}
@@ -638,32 +742,75 @@ function ErgebnisZeile({
       {METRIC_FIELDS.map((field) => {
         const val = row[field] as number | null;
         const isNull = val === null || val === undefined;
+        let display: string;
+        if (isNull) {
+          display = "–";
+        } else if (["net_profit_pct", "cagr_pct", "max_drawdown_pct"].includes(field)) {
+          display = val.toFixed(1) + "%";
+        } else if (["trade_count"].includes(field)) {
+          display = val.toFixed(0);
+        } else if (["trades_per_year"].includes(field)) {
+          display = val.toFixed(1);
+        } else {
+          display = val.toFixed(2);
+        }
+        const isCalmar = field === "calmar_ratio";
         return (
           <TableCell
             key={field}
-            className={`font-mono text-xs tabular-nums ${isNull ? "text-muted-foreground italic" : ""}`}
+            className={`font-mono text-xs tabular-nums ${isNull ? "text-muted-foreground italic" : ""} ${isCalmar && !isNull ? "font-semibold" : ""}`}
           >
-            {isNull
-              ? "–"
-              : ["net_profit_pct", "cagr_pct", "max_drawdown_pct"].includes(field)
-                ? val.toFixed(1) + "%"
-                : field === "trade_count"
-                  ? val.toFixed(0)
-                  : val.toFixed(2)}
+            {display}
           </TableCell>
         );
       })}
 
       <TableCell>
-        <div className="flex items-center gap-1">
-          {isLowActivity && (
+        <div className="flex items-center gap-1 flex-wrap">
+          {row.result_type === "HAL-Import" && row.import_origin_path && (
+            <HerkunftsPopover row={row} />
+          )}
+          {row.result_type === "HAL-Import" && row.strategy_version_status && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Badge variant="destructive" className="text-xs">
+                  Version nicht verfügbar
+                  </Badge>
+                }
+              />
+              <TooltipContent>
+                {row.strategy_version_status}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {row.low_activity && (
             <Badge variant="outline" className="text-xs text-amber-600 border-amber-300">
-              &lt;{threshold} Trades
+              Niedrige Aktivität
             </Badge>
           )}
-          {hasMetrics && row.incomplete && (
+          {row.incomplete && (
             <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">
               Unvollständig
+            </Badge>
+          )}
+          {!row.is_comparable && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Badge variant="outline" className="text-xs text-gray-500 border-gray-300">
+                  Nicht vergleichbar
+                  </Badge>
+                }
+              />
+              <TooltipContent>
+                Gebühren, Slippage oder Sizing-Modell fehlen oder weichen ab.
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {row.success_group && (
+            <Badge variant="default" className="text-xs bg-emerald-600">
+              Erfolgsgruppe
             </Badge>
           )}
           {hasReport && (
@@ -676,7 +823,7 @@ function ErgebnisZeile({
               <ExternalLink className="h-3 w-3" />
             </a>
           )}
-          {row.status === "fehlgeschlagen" && (
+          {!isHalGroup && row.status === "fehlgeschlagen" && (
             <Button
               variant="outline"
               size="sm"
@@ -691,8 +838,13 @@ function ErgebnisZeile({
               Wiederholen
             </Button>
           )}
-          {row.status !== "läuft" && (
-            <Button variant="ghost" size="sm" onClick={() => onDelete(row.run_id)} disabled={deletingRunId === row.run_id || retryingRunId === row.run_id}>
+          {!isHalGroup && row.status !== "läuft" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onDelete(row.run_id)}
+              disabled={deletingRunId === row.run_id || retryingRunId === row.run_id}
+            >
               {deletingRunId === row.run_id ? <Loader className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
             </Button>
           )}
@@ -700,4 +852,54 @@ function ErgebnisZeile({
       </TableCell>
     </TableRow>
   );
+}
+
+function HerkunftsPopover({ row }: { row: ResultRow }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+          <Info className="h-3 w-3 text-muted-foreground" />
+          </Button>
+        }
+      />
+      <TooltipContent side="left" className="max-w-[300px] text-xs">
+        <div className="space-y-1">
+          <p>
+            <strong>Herkunft:</strong> {row.import_origin_path}
+          </p>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            Hash: {row.import_hash?.slice(0, 12)}...
+          </p>
+          {row.import_version !== null && (
+            <p>
+              <strong>Version:</strong> {row.import_version}
+            </p>
+          )}
+          {row.import_created_at && (
+            <p>
+              <strong>Importiert:</strong>{" "}
+              {new Date(row.import_created_at).toLocaleString("de-DE")}
+            </p>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function _metricLabel(field: string): string {
+  const labels: Record<string, string> = {
+    net_profit_pct: "Net Return",
+    cagr_pct: "CAGR",
+    trade_count: "Trades",
+    trades_per_year: "Trades/Jahr",
+    max_drawdown_pct: "Max DD",
+    sharpe_ratio: "Sharpe",
+    sortino_ratio: "Sortino",
+    profit_factor: "PF",
+    calmar_ratio: "Calmar",
+  };
+  return labels[field] ?? field;
 }

@@ -21,7 +21,9 @@ from app.main import app  # noqa: E402
 @pytest.fixture(autouse=True)
 def _clean_db():
     run_command(
-        "TRUNCATE sources, extraction_runs, strategy_drafts, "
+        "TRUNCATE hal_results, hal_imported_files, hal_import_runs, "
+        "shortlist, "
+        "sources, extraction_runs, strategy_drafts, "
         "draft_parameters, draft_source_citations, draft_open_questions, "
         "strategy_versions, version_parameters, "
         "backtest_profiles, batches, batch_instruments, batch_strategy_versions, "

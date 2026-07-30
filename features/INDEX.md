@@ -1,6 +1,6 @@
 # Feature Index — Strategy Bank
 
-**Next Available ID:** PROJ-21
+**Next Available ID:** PROJ-26
 
 | ID | Feature | Status | Priorität | Dependencies |
 |---|---|---|---|---|
@@ -24,7 +24,12 @@
 | PROJ-18 | Einfachauswahl für den Richtungsmodus | Deployed (Frontend + Backend, 2026-07-16, v0.2.23) | P0 | PROJ-4 |
 | PROJ-19 | Hal-Vault-Sync für Quellen + Feldbereinigung | Deployed (2026-07-29, v0.2.31) | P1 | PROJ-9, PROJ-2, PROJ-3 |
 | PROJ-20 | PDF, EPUB und MOBI als Markdown importieren | Deployed (Mehrfach-Upload, 2026-07-29, v0.2.34) | P1 | PROJ-1, PROJ-2, PROJ-14 |
+| PROJ-21 | HAL-Import und Ergebnis-Screening | Approved | P0 | PROJ-3, PROJ-7 |
+| PROJ-22 | Regime-Analyse | Architected | P1 | PROJ-21 |
+| PROJ-23 | Erfolgsfaktorenanalyse | Architected | P1 | PROJ-21 |
+| PROJ-24 | Robustheitslabor | Planned | P2 | PROJ-3, PROJ-21 |
+| PROJ-25 | Crypto-MTS-Forecast-Varianten | Planned | P3 | PROJ-10, PROJ-21, PROJ-24 |
 
-**Empfohlene nächste Umsetzung:** PROJ-20 → PROJ-15 → PROJ-16. PROJ-13 verbleibt bis zur End-to-End-Verifikation in Review.
+**Empfohlene nächste Umsetzung:** PROJ-21 → PROJ-22 → PROJ-23 → PROJ-24 → PROJ-25. PROJ-15 und PROJ-16 bleiben unabhängige UI-Backlogpunkte; PROJ-13 verbleibt bis zur End-to-End-Verifikation in Review.
 
-**Phase 2 / Phase 3 (nicht in INDEX, siehe `docs/Brainstorm-strategy-bank-v2.md` §17):** Scan-PDF-/Screenshot-OCR, zweiter Agent-Provider, freie Web-Links, anpassbare Kategorien, Multi-Upload, Composite Score, Parameter-Sweeps, Regime-Analyse, Signal-Reverse-Engineering.
+**Später (nicht in INDEX):** Scan-PDF-/Screenshot-OCR, zweiter Agent-Provider, freie Web-Links, anpassbare Kategorien, Composite Score und Signal-Reverse-Engineering.
