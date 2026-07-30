@@ -215,6 +215,9 @@ def list_results() -> list[dict]:
             hr.net_return_pct,
             hr.max_drawdown_pct,
             hr.trade_count,
+            hr.fee_pct,
+            hr.slippage_ticks,
+            hr.sizing_model,
             hif.origin_path,
             hif.content_hash,
             hif.import_version,
@@ -249,7 +252,11 @@ def _build_hal_result_row(r: dict) -> dict:
     calmar = _compute_calmar(cagr if cagr is not None else r.get("cagr_pct"), mdd)
     tp = _compute_trades_per_year(tc, r.get("period_start"), r.get("period_end"))
 
-    is_comparable = bool(r.get("fee_pct") is not None and r.get("slippage_ticks") is not None)
+    is_comparable = bool(
+        r.get("fee_pct") is not None
+        and r.get("slippage_ticks") is not None
+        and r.get("sizing_model") is not None
+    )
     low_activity = tp is not None and tp < SUCCESS_GROUP_MIN_TRADES_PER_YEAR
     success_group = (
         is_comparable

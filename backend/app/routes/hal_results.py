@@ -41,9 +41,16 @@ def _safe_zip_path(path: str) -> bool:
     return not normalized.startswith("..") and not os.path.isabs(normalized)
 
 
-def _extract_files_from_request(files: list[UploadFile]) -> list[tuple[str, bytes, bool]]:
-    """Extrahiert .md-Dateien aus direktem Upload oder ZIP-Archiv."""
-    results: list[tuple[str, bytes, bool]] = []
+REASON_UNSAFE_PATH = "Unsicherer Dateipfad im Archiv."
+REASON_UNSUPPORTED_TYPE = "Dateityp wird nicht unterstützt."
+
+
+def _extract_files_from_request(files: list[UploadFile]) -> list[tuple[str, bytes, str | None]]:
+    """Extrahiert .md-Dateien aus direktem Upload oder ZIP-Archiv.
+
+    Drittes Tupel-Element: Ablehnungsgrund, oder None wenn die Datei gültig ist.
+    """
+    results: list[tuple[str, bytes, str | None]] = []
 
     if len(files) == 0:
         return results
@@ -60,35 +67,35 @@ def _extract_files_from_request(files: list[UploadFile]) -> list[tuple[str, byte
     if not all(f.filename and f.filename.lower().endswith(".md") for f in files):
         raise HTTPException(400, "Nur .md- oder .zip-Dateien werden unterstützt.")
 
-    results.append((_normalize_origin_path(first_name, is_zip=False), first_bytes, False))
+    results.append((_normalize_origin_path(first_name, is_zip=False), first_bytes, None))
     for f in files[1:]:
         content = f.file.read()  # type: ignore[union-attr]
-        results.append((_normalize_origin_path(f.filename or "", is_zip=False), content, False))
+        results.append((_normalize_origin_path(f.filename or "", is_zip=False), content, None))
 
     return results
 
 
-def _extract_from_zip(zip_bytes: bytes) -> list[tuple[str, bytes, bool]]:
+def _extract_from_zip(zip_bytes: bytes) -> list[tuple[str, bytes, str | None]]:
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         total_size = sum(info.file_size for info in zf.infolist())
         if total_size > ZIP_MAX_UNCOMPRESSED_MB * 1024 * 1024:
             raise HTTPException(400, f"ZIP-Archiv überschreitet {ZIP_MAX_UNCOMPRESSED_MB} MB unkomprimiert.")
 
-        items: list[tuple[str, bytes, bool]] = []
+        items: list[tuple[str, bytes, str | None]] = []
         for info in zf.infolist():
             if info.is_dir():
                 continue
             path = _normalize_origin_path(info.filename, is_zip=True)
             if not _safe_zip_path(info.filename):
-                items.append((path, b"", True))
+                items.append((path, b"", REASON_UNSAFE_PATH))
                 continue
             if not path.lower().endswith(".md"):
-                items.append((path, b"", True))
+                items.append((path, b"", REASON_UNSUPPORTED_TYPE))
                 continue
             if len(items) >= MAX_ITEMS_PER_UPLOAD:
                 break
             data = zf.read(info)
-            items.append((path, data, False))
+            items.append((path, data, None))
     return items
 
 
@@ -102,9 +109,9 @@ async def import_hal_results(files: list[UploadFile] = File(...)) -> dict:
     # Wenn NUR abgelehnte Einträge vorhanden sind, lehnen wir den gesamten
     # Upload ab (z.B. ZIP nur mit PDFs).
     valid_items = [
-        (path, data, rejected)
-        for path, data, rejected in items
-        if not rejected or path.lower().endswith(".md")
+        (path, data, reason)
+        for path, data, reason in items
+        if reason is None or path.lower().endswith(".md")
     ]
     if not items or not valid_items:
         raise HTTPException(400, "Keine gültigen .md-Dateien gefunden.")
@@ -119,10 +126,10 @@ async def import_hal_results(files: list[UploadFile] = File(...)) -> dict:
             [run_id, len(items)],
         )
 
-        for origin_path, raw_bytes, is_rejected in items:
+        for origin_path, raw_bytes, reject_reason in items:
             content_hash = hashlib.sha256(raw_bytes).hexdigest()
             file_result = _process_one_file(
-                cur, run_id, origin_path, content_hash, raw_bytes, is_rejected
+                cur, run_id, origin_path, content_hash, raw_bytes, reject_reason
             )
             results.append(file_result)
             status_counts[file_result["status"]] += 1
@@ -150,12 +157,11 @@ def _process_one_file(
     origin_path: str,
     content_hash: str,
     raw_bytes: bytes,
-    is_rejected: bool,
+    reject_reason: str | None,
 ) -> dict:
-    if is_rejected:
-        return _reject_file(cur, run_id, origin_path, content_hash, "Dateityp wird nicht unterstützt.")
-
-    # Dedup: gleicher Pfad + gleicher Hash → unverändert (kein neuer Insert)
+    # Dedup: gleicher Pfad + gleicher Hash → unverändert (kein neuer Insert).
+    # Gilt auch für abgelehnte Dateien — sonst crasht ein wiederholter Upload
+    # desselben Ordners am Unique-Index (origin_path, content_hash, import_version).
     existing = run_query(
         """SELECT id, content_hash, import_version FROM hal_imported_files
            WHERE origin_path = %s AND content_hash = %s
@@ -164,6 +170,9 @@ def _process_one_file(
     )
     if existing:
         return {"origin_path": origin_path, "content_hash": content_hash, "status": "unverändert"}
+
+    if reject_reason:
+        return _reject_file(cur, run_id, origin_path, content_hash, reject_reason)
 
     # Gleicher Pfad, anderer Hash → neue Importversion
     current = run_query_one(
@@ -245,18 +254,10 @@ def _import_file(cur, run_id: UUID, origin_path: str, content_hash: str, raw_byt
 
 
 def _insert_hal_result(cur, file_id: UUID, parsed, content_hash: str, import_version: int) -> None:
-    # auto-assign: check for strategy version identifier from file
-    # first try exact name match
+    # Kein Datei-Identifier, kein Auto-Assign: ein Namenstreffer ist höchstens
+    # ein Vorschlag (siehe _find_unique_name_match), nie eine stille Zuweisung.
     sv_id = None
     assignment_origin = None
-
-    match = run_query_one(
-        "SELECT id FROM strategy_versions WHERE snapshot->>'name' = %s ORDER BY version_number DESC LIMIT 1",
-        [parsed.strategy_name],
-    )
-    if match:
-        sv_id = match["id"]
-        assignment_origin = "suggestion_accepted"
 
     cur.execute(
         """INSERT INTO hal_results (id, imported_file_id, strategy_name, asset, timeframe,
@@ -317,14 +318,27 @@ def list_unassigned() -> list[dict]:
 
 
 def _suggest_version(result: dict) -> dict | None:
+    """Genau ein Vorschlag bei eindeutigem normalisiertem Namenstreffer.
+
+    Mehrere Versionen DERSELBEN Strategiefamilie sind kein Mehrfachtreffer
+    (das ist normale Versionshistorie — die neueste Version wird vorgeschlagen).
+    Treffer in UNTERSCHIEDLICHEN Familien sind mehrdeutig ⇒ kein Vorschlag.
+    """
     name = result.get("strategy_name", "")
-    match = run_query_one(
-        "SELECT id, snapshot->>'name' AS name FROM strategy_versions WHERE snapshot->>'name' = %s ORDER BY version_number DESC LIMIT 1",
+    if not name:
+        return None
+    rows = run_query(
+        """SELECT id, family_id, snapshot->>'name' AS name, version_number
+           FROM strategy_versions
+           WHERE lower(trim(snapshot->>'name')) = lower(trim(%s))""",
         [name],
     )
-    if match:
-        return match
-    return None
+    if not rows:
+        return None
+    families = {r["family_id"] for r in rows}
+    if len(families) != 1:
+        return None
+    return max(rows, key=lambda r: r["version_number"])
 
 
 @router.get("/{result_id}", response_model=HalResultRead)

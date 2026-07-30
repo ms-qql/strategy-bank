@@ -29,7 +29,7 @@ def _make_extraction_run(source_id: str) -> str:
     return str(row["id"])
 
 
-def _make_frozen_version(client) -> dict:
+def _make_frozen_version(client, name: str = "Trendfolge SMA Kreuz") -> dict:
     source_id = _make_source()
     run_id = _make_extraction_run(source_id)
     draft_id = str(uuid4())
@@ -42,8 +42,8 @@ def _make_frozen_version(client) -> dict:
             mts_compatibility, mts_confirmed)
            VALUES (%s, %s, %s, %s, 1, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         [
-            draft_id, draft_id, run_id, "abc123",
-            "Trendfolge SMA Kreuz", "Test thesis", "Trendfolge", "kombiniert",
+            draft_id, draft_id, run_id, str(uuid4()),
+            name, "Test thesis", "Trendfolge", "kombiniert",
             "SMA Cross", "SMA Reverse", "100 bars", "Entwurf",
             "entry_exit", True, "discrete", True,
         ],
@@ -147,6 +147,45 @@ class TestHalImportUpload:
         )
         assert resp.status_code == 400
 
+    def test_zip_slip_path_rejected_with_specific_message(self, client):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("../evil.md", _sample_hal_md("Evil"))
+            zf.writestr("ok.md", _sample_hal_md("Ok Strat"))
+        resp = client.post(
+            "/hal-results/import",
+            files=[("files", ("mix.zip", buf.getvalue(), "application/zip"))],
+        )
+        assert resp.status_code == 201, resp.text
+        files = {f["origin_path"]: f for f in resp.json()["files"]}
+        assert files["../evil.md"]["status"] == "fehlerhaft"
+        assert files["../evil.md"]["error_message"] == "Unsicherer Dateipfad im Archiv."
+        assert files["ok.md"]["status"] == "importiert"
+
+    def test_reupload_of_folder_with_rejected_file_does_not_crash(self, client):
+        """Regression: derselbe Ordner (inkl. bereits abgelehnter Datei) darf
+        beliebig oft erneut hochgeladen werden, ohne die gesamte Transaktion
+        (inkl. bereits gültiger Geschwisterdateien) zu verlieren."""
+
+        def make_zip():
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w") as zf:
+                zf.writestr("readme.pdf", b"%PDF not a backtest")
+                zf.writestr("strat_ok.md", _sample_hal_md("Reupload OK Strat"))
+            return buf.getvalue()
+
+        resp1 = client.post("/hal-results/import", files=[("files", ("folder.zip", make_zip(), "application/zip"))])
+        assert resp1.status_code == 201, resp1.text
+        statuses1 = {f["origin_path"]: f["status"] for f in resp1.json()["files"]}
+        assert statuses1["readme.pdf"] == "fehlerhaft"
+        assert statuses1["strat_ok.md"] == "importiert"
+
+        resp2 = client.post("/hal-results/import", files=[("files", ("folder.zip", make_zip(), "application/zip"))])
+        assert resp2.status_code == 201, resp2.text
+        statuses2 = {f["origin_path"]: f["status"] for f in resp2.json()["files"]}
+        assert statuses2["readme.pdf"] == "unverändert"
+        assert statuses2["strat_ok.md"] == "unverändert"
+
     def test_import_list_runs(self, client):
         client.post("/hal-results/import", files=[("files", ("t.md", _sample_hal_md(), "text/markdown"))])
         resp = client.get("/hal-results/imports")
@@ -159,7 +198,8 @@ class TestHalImportUpload:
 
 
 class TestHalAssignment:
-    def test_auto_assign_on_name_match(self, client):
+    def test_name_match_is_suggestion_not_auto_assign(self, client):
+        """Ein eindeutiger Namenstreffer ist ein Vorschlag, keine stille Zuweisung."""
         version = _make_frozen_version(client)
         md = _sample_hal_md("Trendfolge SMA Kreuz")
         resp = client.post("/hal-results/import", files=[("files", ("test.md", md, "text/markdown"))])
@@ -171,7 +211,29 @@ class TestHalAssignment:
             "SELECT hr.strategy_version_id, hr.assignment_origin FROM hal_results hr JOIN hal_imported_files hif ON hif.id = hr.imported_file_id WHERE hif.origin_path = 'test.md' AND hif.is_current = true"
         )
         assert r is not None
-        assert r["strategy_version_id"] is not None
+        assert r["strategy_version_id"] is None
+        assert r["assignment_origin"] is None
+
+        unassigned = client.get("/hal-results/unassigned").json()
+        row = next(u for u in unassigned if u["import_origin_path"] == "test.md")
+        assert row["suggested_version_id"] == version["id"]
+        assert row["suggested_version_name"] == "Trendfolge SMA Kreuz"
+
+    def test_ambiguous_name_match_stays_unassigned_without_suggestion(self, client):
+        """Zwei unterschiedliche Strategiefamilien mit demselben Namen ⇒ kein Vorschlag."""
+        _make_frozen_version(client, name="Ambiger Name")
+        _make_frozen_version(client, name="Ambiger Name")
+        md = _sample_hal_md("Ambiger Name")
+        client.post("/hal-results/import", files=[("files", ("amb.md", md, "text/markdown"))])
+
+        r = run_query_one(
+            "SELECT hr.strategy_version_id FROM hal_results hr JOIN hal_imported_files hif ON hif.id = hr.imported_file_id WHERE hif.origin_path = 'amb.md' AND hif.is_current = true"
+        )
+        assert r["strategy_version_id"] is None
+
+        unassigned = client.get("/hal-results/unassigned").json()
+        row = next(u for u in unassigned if u["import_origin_path"] == "amb.md")
+        assert row["suggested_version_id"] is None
 
     def test_list_unassigned(self, client):
         client.post("/hal-results/import", files=[("files", ("x.md", _sample_hal_md("Unknown Strategy"), "text/markdown"))])

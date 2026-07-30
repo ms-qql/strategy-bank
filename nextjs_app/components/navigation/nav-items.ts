@@ -3,6 +3,7 @@ import {
   Play,
   BarChart3,
   Settings,
+  Upload,
   type LucideIcon,
 } from "lucide-react";
 
@@ -25,6 +26,12 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/batches",
     icon: Play,
     matchPaths: ["/batches"],
+  },
+  {
+    label: "HAL-Import",
+    href: "/hal-import",
+    icon: Upload,
+    matchPaths: ["/hal-import"],
   },
   {
     label: "Ergebnisse",
