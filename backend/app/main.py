@@ -18,9 +18,11 @@ from .routes import drafts as draft_routes
 from .routes import execution as execution_routes
 from .routes import export as export_routes
 from .routes import extractions as extraction_routes
+from .routes import hal_results as hal_result_routes
 from .routes import hal_sync as hal_sync_routes
 from .routes import results as result_routes
 from .routes import runs as run_routes
+from .routes import shortlist as shortlist_routes
 from .routes import sources as source_routes
 
 
@@ -106,6 +108,8 @@ app.include_router(extraction_routes.router)
 app.include_router(draft_routes.router)
 app.include_router(export_routes.router)
 app.include_router(hal_sync_routes.router)
+app.include_router(hal_result_routes.router)
+app.include_router(shortlist_routes.router)
 app.include_router(batch_routes.router)
 app.include_router(audit_routes.router)
 app.include_router(result_routes.router)
