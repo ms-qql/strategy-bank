@@ -1,6 +1,6 @@
 # PROJ-21: HAL-Import und Ergebnis-Screening
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-07-30
 **Last Updated:** 2026-07-30
 
@@ -482,4 +482,7 @@ Mandanten noch Login. Alle Endpunkte folgen dem bestehenden Muster der übrigen 
 - **Status:** **Approved**
 
 ## Deployment
-_To be added by /deploy_
+
+**Production URL:** Dokploy-Domain auf Service `strategy-bank-web` (nicht im Repo dokumentiert)
+**Deployed:** 2026-07-30 · **Version:** 0.2.38
+**Host project:** strategy-bank (Dokploy Compose, `docker-compose.dokploy.yml`)
