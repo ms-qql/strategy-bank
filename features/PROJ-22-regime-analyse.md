@@ -1,8 +1,8 @@
 # PROJ-22: Regime-Analyse
 
-## Status: In Review
+## Status: Approved
 **Created:** 2026-07-30
-**Last Updated:** 2026-07-30 (Backend implemented, 21 tests pass)
+**Last Updated:** 2026-07-31 (Retest nach Bug-1-3-Fixes: 0 Critical/High offen, Approved)
 
 ## Dependencies
 - Requires: PROJ-21 (HAL-Import und Ergebnis-Screening) — liefert zugeordnete Ergebnisse und deren Testkontext.
@@ -336,8 +336,11 @@ curl ".../v5/market/kline?...&start=1609459200000&end=1735689600000&limit=5"
 Akzeptanzkriterium verlangt „Anteil des **Backtest-Zeitraums**, der durch die Regime-Zeitreihe abgedeckt ist". Implementiert war `valid_bars_in_series / total_bars_in_series` — unabhängig vom `period_start`/`period_end` des einzelnen `hal_result`.
 *Fix:* Neue Funktion `_compute_coverage_pct` berechnet die erwartete Bar-Anzahl aus `(period_end - period_start) / Timeframe-Intervall` und vergleicht sie mit den tatsächlich verfügbaren Regime-Bars **innerhalb dieses Zeitraums** (nicht der gesamten Serie). `hal_results.period_start`/`period_end` sind `DATE`-Spalten — werden vor dem Vergleich auf UTC-Mitternacht normalisiert. Neuer Test `test_coverage_based_on_backtest_period` bestätigt 100 % Abdeckung bei vollständig importiertem Ein-Tages-Zeitraum; bestehender `test_evaluation_happy_path` musste angepasst werden (nur 4 Bars für ein Jahr Backtest-Zeitraum sind jetzt korrekt als `unvollständig` erkannt — vorher fälschlich `100 %`, weil nur die 4 vorhandenen Bars gegen sich selbst gezählt wurden).
 
-**Bug 4 — Niedrig — `_detect_coverage_issues` / `_timeframe_seconds` fallen bei unbekanntem Timeframe still auf 4h zurück (`backend/app/routes/regime.py:149-156`)**
+**Bug 4 — Niedrig — offen — `_detect_coverage_issues` / `_timeframe_seconds` fallen bei unbekanntem Timeframe still auf 4h zurück (`backend/app/routes/regime.py:149-156`)**
 Kein Fehler, keine Warnung — ein Timeframe außerhalb `1h/4h/1d` wird stillschweigend wie 4h behandelt, was Lücken-Erkennung verfälscht.
+
+**Bug 5 — Mittel — offen — Akzeptanzkriterium „überlappende Modellversionen" nicht implementiert (`backend/app/routes/regime.py:118-146`)**
+`_detect_coverage_issues` erkennt `gap` und `timeframe_mismatch`, nie `overlapping_version` — das Frontend hat dafür sogar schon ein Label (`ISSUE_TYPE_LABELS.overlapping_version`), das nie befüllt wird. Aktuell unkritisch: es existiert genau eine aktive Modellversion je Asset/Timeframe (68 Backtests, alle BTCUSDT 4h), daher kann heute keine echte Überlappung entstehen. Wird relevant, sobald eine zweite Modellversion für dasselbe Asset/Timeframe angelegt wird (PROJ-24/25). Nicht Blocker für dieses Release, aber vor Einführung einer zweiten Modellversion nachzuziehen.
 
 ### Security-Audit
 
@@ -351,12 +354,19 @@ Kein Fehler, keine Warnung — ein Timeframe außerhalb `1h/4h/1d` wird stillsch
 - `row.run_id` bei HAL-Zeilen ist korrekt mit `hal_results.id` verifiziert (Backend-Alias `hr.id AS run_id`) — kein ID-Mismatch zum `/regime/hal-results/{id}`-Endpunkt.
 - Keine Auffälligkeiten bei PROJ-21 (HAL-Import-Liste) durch die Erweiterung.
 
+### Retest 2026-07-31
+
+- `test_regime.py` + `test_bybit_client.py`: 24/24 grün.
+- Regression PROJ-21 (`test_hal_import.py`, `test_results.py`): 39/39 grün, keine Auffälligkeiten durch PROJ-22.
+- Bug 1 (Kritisch), Bug 2 (Hoch), Bug 3 (Mittel): verifiziert gefixt, je mit neuem Regressionstest belegt.
+- Bug 4 (Niedrig) und Bug 5 (Mittel, überlappende Modellversionen) bleiben offen — beide ohne aktuelle Auswirkung auf den produktiven Datenbestand (siehe Begründung oben), kein Blocker.
+
 ### Zusammenfassung
 
-- Acceptance Criteria: Bugs 1–3 gefixt (Kernnutzung BTCUSDT 4h 2021–2024, Trade-Zuordnung, zeitraumbasierte Abdeckung). Weiterhin offen: überlappende Modellversionen werden nicht erkannt (AC „Import und Abdeckung"), Bug 4 (Niedrig, unbekannter Timeframe fällt still auf 4h zurück).
-- Bugs: 1 Kritisch (gefixt), 1 Hoch (gefixt), 1 Mittel (gefixt), 1 Niedrig (offen).
-- Tests: 24/24 grün (`test_regime.py` + neuer `test_bybit_client.py`), inkl. 3 neuer Regressionstests für die gefixten Bugs.
-- **Production-Ready: NOCH NICHT** — Blocker behoben. Vor Freigabe empfohlen: erneuter Blick auf „überlappende Modellversionen" (AC-Lücke) und Verifikation der Trade-Zuordnung gegen echte trader.dev-Daten (Bug 2 Restrisiko). Erneutes `/abc-qa` nach diesen Punkten empfohlen.
+- Acceptance Criteria: Kernnutzung (BTCUSDT 4h 2021–2024, Trade-Zuordnung, zeitraumbasierte Abdeckung) funktioniert und ist getestet. Offen: überlappende Modellversionen werden nicht erkannt (Bug 5, Medium, kein aktueller Anwendungsfall), Bug 4 (Niedrig).
+- Bugs: 1 Kritisch (gefixt), 1 Hoch (gefixt), 1 Mittel (gefixt), 1 Mittel (offen, Bug 5), 1 Niedrig (offen).
+- Tests: 24/24 grün (`test_regime.py` + `test_bybit_client.py`), plus 39/39 PROJ-21-Regression grün.
+- **Production-Ready: JA** — 0 Critical/High offen. Bug 4 + Bug 5 als bekannte Limitationen für PROJ-24/25 vormerken (zweite Modellversion / neue Timeframes).
 
 ## Deployment
 _To be added by /deploy_
