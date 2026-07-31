@@ -1,8 +1,8 @@
 # PROJ-22: Regime-Analyse
 
-## Status: Architected
+## Status: In Review
 **Created:** 2026-07-30
-**Last Updated:** 2026-07-30
+**Last Updated:** 2026-07-30 (Backend implemented, 21 tests pass)
 
 ## Dependencies
 - Requires: PROJ-21 (HAL-Import und Ergebnis-Screening) — liefert zugeordnete Ergebnisse und deren Testkontext.
@@ -273,7 +273,133 @@ Liste, wo ein Nachladen noch fehlt, ohne jede Zeile einzeln zu öffnen.
   2021-2024 anlegen — sie deckt alle 68 heute vorhandenen Backtests ab.
 
 ## QA Test Results
-_To be added by /qa_
+**Getestet:** 2026-07-30 · **Tester:** QA Engineer
+
+### Automatisierte Tests
+
+- `backend/tests/test_regime.py`: 21/21 grün.
+- Regression `backend/tests/` (Rest der Suite): Kollektion sauber (325 Tests), voller Lauf bricht nach 2 Minuten durch einen Timeout ab — Ursache liegt außerhalb von PROJ-22 (kein regime-bezogener Test hängt; `test_regime.py` isoliert läuft in 8,8s durch). Nicht Teil dieses Feature-Scopes, sollte aber separat untersucht werden.
+- Keine Tests decken `POST /regime/series/{id}/refresh` bzw. `bybit_client.fetch_klines` gegen echtes API-Antwortformat ab — genau dieser Pfad enthält Bug 1 unten.
+
+### Acceptance Criteria
+
+**Regime-Zeitreihe:** 9/10 bestanden.
+- [x] Eindeutigkeit durch Provider-Symbol, Asset, Timeframe, Modellversion (`UNIQUE`-Constraint + `_ensure_series`).
+- [x] Bar-Zeitstempel, bestätigtes Regime, Modellversion je Datensatz.
+- [x] Wiederverwendung über `regime_series`-Lookup in `get_regime_evaluation`.
+- [x] Neue Modellversion bei Parameteränderung, alte bleibt unangetastet (append-only, `CHECK` beim Anlegen).
+- [x] „nicht verfügbar" vor Warm-up / bei Std.-Abw. 0 (`regime_calculator.py:68-70`, getestet in `test_constant_price_all_unavailable`).
+- [x] Strikte Schwellenauswertung, Gleichheit → `sideways` (`>`/`<`, nicht `>=`/`<=`).
+- [x] Nur abgeschlossene Bars (Kursbars kommen ausschließlich aus abgeschlossenen Bybit-Kerzen).
+- [x] Untere ≥ obere Schwelle → 422 mit exaktem Text (`test_create_model_invalid_thresholds`, `test_create_model_equal_thresholds`).
+- [x] Kandidatenwechsel setzt Zähler auf 1, ungültige Werte setzen zurück (`regime_calculator.py:92-109`).
+- [x] Erster bestätigter Zustand wie Regimewechsel sichtbar (kein Sonderfall nötig, `count>=confirmation_candles` greift ab erstem Kandidaten).
+
+**Import und Abdeckung:** 4/6 bestanden.
+- [x] Keine trader.dev-/Zusatzläufe für dieses Feature (Bybit Public API + vorhandener trader.dev-`get_trades`-Client, kein neuer Backtest).
+- [x] Externer Import via `POST /regime/series/import` (`test_import_series`).
+- [x] Duplikate erzeugen keine zweite Bar (`test_import_series_dedup`, `UNIQUE(series_id, bar_time)`).
+- [ ] **Bug 1 (Critical):** Lücken werden erkannt, überlappende Modellversionen NICHT — `_detect_coverage_issues` prüft nur `gap` und `timeframe_mismatch`, nie `overlapping_version`. Frontend hat dafür sogar schon ein Label (`ISSUE_TYPE_LABELS.overlapping_version`), das nie befüllt wird toter Code auf Wartefunktion.
+- [~] Abdeckungsanzeige vorhanden, aber **nicht zeitraumbasiert auf den Backtest** — siehe Bug 3.
+- [x] Unter 95 % → `is_incomplete` (`get_regime_evaluation`, Backend + Frontend-Badge „Unvollständig").
+
+**Performance je Regime:** 6/8 bestanden.
+- [x] Nur zeitgestempelte Trades verwendet (`result_trades`, ausschließlich Trade-basiert).
+- [x] Klartextmeldung bei fehlenden Zeitdaten (`test_no_trades`).
+- [x] Trade-Anzahl, Net P&L, Max Drawdown, Anteil je Regime vorhanden.
+- [x] Calmar/Sortino nur bei belastbarer Berechnung (Sortino ab 6 Trades, Calmar nur bei `max_dd != 0`).
+- [x] „Kleine Stichprobe" unter 6 Trades (`test_small_sample_badge`).
+- [x] „Regime-Dominanz" nur bei positivem Gesamtergebnis, > 70 % (`test_evaluation_happy_path`, `test_no_dominance_on_negative_total`).
+- [x] Sprachlich „Zusammenhang/Verteilung/Häufigkeit", nie „Ursache" (grep über Backend + Frontend: kein Treffer für „Ursache").
+- [ ] **Bug 2 (High):** Zuordnungsregel Trade → Regime ist nicht verifiziert belastbar, siehe unten.
+
+### Bugs
+
+**Status 2026-07-31: Bugs 1–3 gefixt, verifiziert durch neue Regressionstests (`backend/tests/test_bybit_client.py`, 2 neue Fälle in `backend/tests/test_regime.py`). Bug 4 offen (Niedrig, kein Blocker).**
+
+**Bug 1 — Kritisch — GEFIXT — `refresh_series` lädt bei mehrjährigen Zeiträumen keine vollständige Historie (`backend/app/services/bybit_client.py:14-64`, `backend/app/routes/regime.py:187-254`)**
+Bybit liefert `/v5/market/kline` **absteigend sortiert** (neueste Kerze zuerst) — live gegen die echte API verifiziert:
+```
+curl ".../v5/market/kline?...&start=1609459200000&end=1735689600000&limit=5"
+→ list[0] = 2024-12-31, list[4] = 2024-12-30  (neueste zuerst)
+```
+`fetch_klines` geht von aufsteigender Sortierung aus und setzt `cursor = int(rows[-1][0]) * 1000 + 1` — bei absteigender Sortierung ist `rows[-1]` aber die **älteste Kerze der jeweils zuletzt (nahe `end_ms`) geholten Seite**, nicht die nächste vorwärts. Für den in der Spec genannten Referenzfall (BTCUSDT 4h, 2021-01-01 bis 2024-12-31, ~8.800 Bars) bedeutet das: Seite 1 liefert die 1000 jüngsten Kerzen vor `end_ms` (~Mitte 2024), `cursor` rückt danach nur bis an den Rand dieses Fensters vor, die Schleife bricht typischerweise ab, sobald `len(rows) < 1000` — de facto werden nur die letzten Monate geladen, **2021–2023 fehlen komplett**, ohne Fehlermeldung.
+*Auswirkung:* Genau der in der Tech-Design-Sektion F beschriebene erste Testfall („Zeitreihe für BTCUSDT 4h über 2021-2024 anlegen — deckt alle 68 Backtests ab") schlägt in der Praxis fehl. Abdeckung, Lückenerkennung und alle darauf aufbauenden Auswertungen sind betroffen, weil die Zeitreihe von vornherein unvollständig ist.
+*Fix:* `fetch_klines` paginiert jetzt rückwärts — `end` wandert je Seite auf die älteste bisher gesehene Kerze zurück (`cursor_end`), `start_ms` bleibt fest, Ergebnis wird vor Rückgabe aufsteigend sortiert. Neuer Regressionstest `test_fetch_klines_paginates_through_descending_pages` simuliert eine absteigend sortierte Fake-Bybit-API über 2.500 Kerzen (> 1 Seite) und prüft vollständige, aufsteigend sortierte Abdeckung.
+
+**Bug 2 — Hoch — GEFIXT — Trade-zu-Regime-Zuordnung nur bei exakter Zeitstempel-Gleichheit (`backend/app/routes/regime.py`)**
+`bar_index.get(entry_ts, "ohne Regimezuordnung")` matchte die Trade-`entry_time` 1:1 gegen `bar_time`. Alle Tests konstruierten `entry_time` bewusst identisch zu einer vorhandenen Bar — die reale trader.dev-Trade-Liste wurde damit nie gegen diese Zuordnung verifiziert. Fiel der tatsächliche Entry-Zeitstempel nicht exakt auf eine 4h-Bar-Grenze, landete der Trade in „ohne Regimezuordnung", obwohl die zugehörige Bar existiert.
+*Fix:* Neue Funktion `_find_bar_regime` (Bisect auf sortierte `bar_times`) ordnet den Entry-Zeitpunkt der größten `bar_time <= entry_time` zu — Bucket-Zuordnung statt Exact-Match. Liegt die gefundene Bar mehr als ein Timeframe-Intervall zurück (echte Lücke), bleibt der Trade „ohne Regimezuordnung". Neuer Test `test_trade_entry_between_bars_uses_bucket_regime` deckt sowohl den Bucket-Fall (Entry 2:30 Uhr → Bar 0:00 Uhr) als auch die echte Lücke ab.
+*Restrisiko (dokumentiert, kein Blocker):* weiterhin nicht gegen echte `get_trades()`-Antworten von trader.dev verifiziert — vor Produktivnutzung mit echten Daten gegenprüfen.
+
+**Bug 3 — Mittel — GEFIXT — Abdeckung bezog sich auf die gesamte Zeitreihe, nicht auf den Backtest-Zeitraum (`backend/app/routes/regime.py`)**
+Akzeptanzkriterium verlangt „Anteil des **Backtest-Zeitraums**, der durch die Regime-Zeitreihe abgedeckt ist". Implementiert war `valid_bars_in_series / total_bars_in_series` — unabhängig vom `period_start`/`period_end` des einzelnen `hal_result`.
+*Fix:* Neue Funktion `_compute_coverage_pct` berechnet die erwartete Bar-Anzahl aus `(period_end - period_start) / Timeframe-Intervall` und vergleicht sie mit den tatsächlich verfügbaren Regime-Bars **innerhalb dieses Zeitraums** (nicht der gesamten Serie). `hal_results.period_start`/`period_end` sind `DATE`-Spalten — werden vor dem Vergleich auf UTC-Mitternacht normalisiert. Neuer Test `test_coverage_based_on_backtest_period` bestätigt 100 % Abdeckung bei vollständig importiertem Ein-Tages-Zeitraum; bestehender `test_evaluation_happy_path` musste angepasst werden (nur 4 Bars für ein Jahr Backtest-Zeitraum sind jetzt korrekt als `unvollständig` erkannt — vorher fälschlich `100 %`, weil nur die 4 vorhandenen Bars gegen sich selbst gezählt wurden).
+
+**Bug 4 — Niedrig — `_detect_coverage_issues` / `_timeframe_seconds` fallen bei unbekanntem Timeframe still auf 4h zurück (`backend/app/routes/regime.py:149-156`)**
+Kein Fehler, keine Warnung — ein Timeframe außerhalb `1h/4h/1d` wird stillschweigend wie 4h behandelt, was Lücken-Erkennung verfälscht.
+
+### Security-Audit
+
+- Durchgehend parametrisierte SQL-Queries, keine String-Konkatenation — keine SQL-Injection-Fläche gefunden.
+- Kein Auth/Mandant-Konzept auf `/regime/*` — konsistent mit dem Rest der App (Projekt ist bewusst single-tenant, keine JWT/RLS irgendwo im Bestand; siehe Tech Design „single-tenant"). Kein regressionsspezifischer Befund.
+- `bybit_client.fetch_klines` und `trader_dev.get_trades` sprechen ausschließlich öffentliche/bereits autorisierte externe Endpunkte an, keine Nutzereingabe fließt ungeprüft in die URL außer `asset`/`timeframe`, die vorher normalisiert werden (`_asset_to_bybit_symbol`).
+
+### Regression
+
+- Bestehende Ergebnisliste (`/ergebnisse`) unverändert für Nicht-HAL-Zeilen; „Regime"-Button erscheint nur bei `result_type === "HAL-Import"`.
+- `row.run_id` bei HAL-Zeilen ist korrekt mit `hal_results.id` verifiziert (Backend-Alias `hr.id AS run_id`) — kein ID-Mismatch zum `/regime/hal-results/{id}`-Endpunkt.
+- Keine Auffälligkeiten bei PROJ-21 (HAL-Import-Liste) durch die Erweiterung.
+
+### Zusammenfassung
+
+- Acceptance Criteria: Bugs 1–3 gefixt (Kernnutzung BTCUSDT 4h 2021–2024, Trade-Zuordnung, zeitraumbasierte Abdeckung). Weiterhin offen: überlappende Modellversionen werden nicht erkannt (AC „Import und Abdeckung"), Bug 4 (Niedrig, unbekannter Timeframe fällt still auf 4h zurück).
+- Bugs: 1 Kritisch (gefixt), 1 Hoch (gefixt), 1 Mittel (gefixt), 1 Niedrig (offen).
+- Tests: 24/24 grün (`test_regime.py` + neuer `test_bybit_client.py`), inkl. 3 neuer Regressionstests für die gefixten Bugs.
+- **Production-Ready: NOCH NICHT** — Blocker behoben. Vor Freigabe empfohlen: erneuter Blick auf „überlappende Modellversionen" (AC-Lücke) und Verifikation der Trade-Zuordnung gegen echte trader.dev-Daten (Bug 2 Restrisiko). Erneutes `/abc-qa` nach diesen Punkten empfohlen.
 
 ## Deployment
 _To be added by /deploy_
+
+## Implementation Notes (Backend)
+**Completed:** 2026-07-30
+
+### Files Created/Modified
+
+| File | Action |
+|------|--------|
+| `backend/sql/015_regime_analyse.sql` | 6 tables: `regime_model_versions`, `price_bars`, `regime_series`, `regime_bars`, `result_trades`, `regime_evaluations`, `regime_eval_details` |
+| `backend/app/schemas/regime.py` | All Pydantic schemas |
+| `backend/app/services/regime_calculator.py` | Z-Score + HMA + confirmation logic |
+| `backend/app/services/bybit_client.py` | Bybit public API OHLCV fetcher |
+| `backend/app/services/trader_dev.py` | Added `get_trades()` function |
+| `backend/app/routes/regime.py` | All API endpoints |
+| `backend/app/main.py` | Registered regime routes |
+| `backend/tests/conftest.py` | Added new tables to truncate |
+| `backend/tests/test_regime.py` | 21 integration + unit tests |
+
+### API Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/regime/models` | List model versions |
+| POST | `/regime/models` | Create model version |
+| GET | `/regime/series` | List time series (filter by asset/timeframe) |
+| GET | `/regime/series/{id}` | Get series detail with bars + coverage issues |
+| POST | `/regime/series/import` | Import precomputed regime bars |
+| POST | `/regime/series/{id}/refresh` | Fetch OHLCV from Bybit, compute regime, store |
+| POST | `/regime/hal-results/{id}/trades/fetch` | Download trades from trader.dev |
+| GET | `/regime/hal-results/{id}/trades` | List downloaded trades |
+| GET | `/regime/hal-results/{id}/regime` | Get regime evaluation |
+
+### Deviations from Spec
+
+- HMA implementation is pure Python using WMA-based Hull Moving Average formula
+- Coverage calculation is bar-count based (valid_bars/total_bars) — time-range based coverage deferred to frontend or future refinement
+- The `regime/hal-results/{id}/regime` endpoint uses `model_version_id` query param to select the model version
+
+### Next Steps
+
+- Frontend: `/regime` page, regime panel on `/ergebnisse`
+- Run `/abc-qa` for QA testing
+- Apply migration to production DB on deploy

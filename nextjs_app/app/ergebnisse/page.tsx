@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
-import { apiDelete, apiGet, apiPost, apiUrl, ApiError } from "@/lib/api-client";
+import { apiDelete, apiGet, apiPost, apiPostJson, apiUrl, ApiError } from "@/lib/api-client";
 import {
   resultRowSchema,
   RESULT_TYPE_LABELS,
@@ -11,6 +11,15 @@ import {
   CATEGORIES,
   type ResultRow,
 } from "@/lib/schemas/results";
+import {
+  regimeEvaluationReadSchema,
+  resultTradeReadSchema,
+  fetchTradesResponseSchema,
+  REGIME_LABELS,
+  REGIME_BADGE_VARIANT,
+  type RegimeEvaluationRead,
+  type ResultTradeRead,
+} from "@/lib/schemas/regime";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -31,6 +40,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
@@ -43,6 +59,8 @@ import {
   Trash2,
   Star,
   Info,
+  TrendingUp,
+  AlertTriangle,
 } from "lucide-react";
 
 type SortDir = "asc" | "desc" | null;
@@ -131,6 +149,8 @@ export default function ErgebnissePage() {
   const [sort, setSort] = useState<SortState>({ field: "calmar_ratio", dir: "desc" });
 
   const [togglingStar, setTogglingStar] = useState<string | null>(null);
+
+  const [regimePanelResultId, setRegimePanelResultId] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -508,8 +528,14 @@ export default function ErgebnissePage() {
           onDelete={handleDelete}
           onRetry={handleRetry}
           onStarToggle={handleStarToggle}
+          onOpenRegimePanel={setRegimePanelResultId}
         />
       ))}
+
+      <RegimePanel
+        resultId={regimePanelResultId}
+        onClose={() => setRegimePanelResultId(null)}
+      />
     </div>
   );
 }
@@ -585,6 +611,7 @@ function ErgebnisGruppe({
   onDelete,
   onRetry,
   onStarToggle,
+  onOpenRegimePanel,
 }: {
   rows: ResultRow[];
   groupLabel: string;
@@ -597,6 +624,7 @@ function ErgebnisGruppe({
   onDelete: (runId: string) => void;
   onRetry: (runId: string) => void;
   onStarToggle: (strategyId: string, currentlyShortlisted: boolean) => void;
+  onOpenRegimePanel: (resultId: string) => void;
 }) {
   const isHalGroup = rows[0]?.result_type === "HAL-Import";
 
@@ -642,6 +670,7 @@ function ErgebnisGruppe({
                 onDelete={onDelete}
                 onRetry={onRetry}
                 onStarToggle={onStarToggle}
+                onOpenRegimePanel={onOpenRegimePanel}
               />
             ))}
           </TableBody>
@@ -660,6 +689,7 @@ function ErgebnisZeile({
   onDelete,
   onRetry,
   onStarToggle,
+  onOpenRegimePanel,
 }: {
   row: ResultRow;
   isHalGroup: boolean;
@@ -669,9 +699,11 @@ function ErgebnisZeile({
   onDelete: (runId: string) => void;
   onRetry: (runId: string) => void;
   onStarToggle: (strategyId: string, currentlyShortlisted: boolean) => void;
+  onOpenRegimePanel: (resultId: string) => void;
 }) {
   const hasReport = !!row.report_link;
   const canStar = !!row.strategy_id;
+  const isHalImport = row.result_type === "HAL-Import";
 
   return (
     <TableRow>
@@ -813,6 +845,16 @@ function ErgebnisZeile({
               Erfolgsgruppe
             </Badge>
           )}
+          {isHalImport && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onOpenRegimePanel(row.run_id)}
+            >
+              <TrendingUp className="mr-1 h-3 w-3" />
+              Regime
+            </Button>
+          )}
           {hasReport && (
             <a
               href={row.report_link!}
@@ -886,6 +928,247 @@ function HerkunftsPopover({ row }: { row: ResultRow }) {
         </div>
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+function RegimePanel({
+  resultId,
+  onClose,
+}: {
+  resultId: string | null;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [evaluation, setEvaluation] = useState<RegimeEvaluationRead | null>(null);
+  const [trades, setTrades] = useState<ResultTradeRead[]>([]);
+  const [tradesLoading, setTradesLoading] = useState(false);
+  const [fetchingTrades, setFetchingTrades] = useState(false);
+
+  useEffect(() => {
+    if (!resultId) return;
+    setLoading(true);
+    setError(null);
+    setEvaluation(null);
+    setTrades([]);
+
+    (async () => {
+      try {
+        const t = z
+          .array(resultTradeReadSchema)
+          .parse(await apiGet<ResultTradeRead[]>(`/regime/hal-results/${resultId}/trades`));
+        setTrades(t);
+
+        if (t.length === 0) {
+          setLoading(false);
+          return;
+        }
+
+        try {
+          const ev = regimeEvaluationReadSchema.parse(
+            await apiGet<RegimeEvaluationRead>(`/regime/hal-results/${resultId}/regime`),
+          );
+          setEvaluation(ev);
+        } catch (e) {
+          setError(
+            e instanceof ApiError ? e.message : "Regime-Auswertung nicht möglich.",
+          );
+        }
+      } catch (e) {
+        setError(
+          e instanceof ApiError ? e.message : "Trades konnten nicht geladen werden.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [resultId]);
+
+  const handleFetchTrades = async () => {
+    if (!resultId) return;
+    setFetchingTrades(true);
+    setError(null);
+    try {
+      const resp = fetchTradesResponseSchema.parse(
+        await apiPostJson(`/regime/hal-results/${resultId}/trades/fetch`, {}),
+      );
+
+      const t = z
+        .array(resultTradeReadSchema)
+        .parse(await apiGet<ResultTradeRead[]>(`/regime/hal-results/${resultId}/trades`));
+      setTrades(t);
+
+      if (t.length > 0 && resp.trades_count > 0) {
+        try {
+          const ev = regimeEvaluationReadSchema.parse(
+            await apiGet<RegimeEvaluationRead>(`/regime/hal-results/${resultId}/regime`),
+          );
+          setEvaluation(ev);
+        } catch {
+          // evaluation will load or show an error
+        }
+      }
+    } catch (e) {
+      setError(
+        e instanceof ApiError ? e.message : "Trades konnten nicht geladen werden.",
+      );
+    } finally {
+      setFetchingTrades(false);
+    }
+  };
+
+  return (
+    <Sheet open={resultId !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <SheetContent side="right" className="sm:max-w-xl w-full overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle>Regime-Auswertung</SheetTitle>
+          <SheetDescription>
+            Performance je Marktregime (Bullish, Bearish, Seitwärts)
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="mt-4 space-y-4">
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
+
+          {error && (
+            <Alert variant="destructive">
+              <TriangleAlert aria-hidden="true" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {!loading && trades.length === 0 && !error && (
+            <div className="space-y-4">
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Regime-Auswertung nicht möglich: Zeitgestempelte Ergebnisdaten fehlen.
+                  Lade zuerst die Trades vom trader.dev-Report.
+                </AlertDescription>
+              </Alert>
+              <Button
+                variant="default"
+                onClick={handleFetchTrades}
+                disabled={fetchingTrades}
+                className="w-full"
+              >
+                {fetchingTrades && <Loader className="mr-1 h-3 w-3 animate-spin" />}
+                Trades vom trader.dev laden
+              </Button>
+            </div>
+          )}
+
+          {!loading && trades.length > 0 && !evaluation && !error && (
+            <div className="flex items-center justify-center py-8">
+              <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          )}
+
+          {evaluation && (
+            <div className="space-y-4">
+              <Card>
+                <CardContent className="pt-4 space-y-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Modellversion:</span>
+                    <Badge variant="outline">{evaluation.model_version_name ?? "–"}</Badge>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Zuordnungsregel:</span>
+                    <span className="font-mono text-xs">{evaluation.assignment_rule}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Abdeckung:</span>
+                    <span>{evaluation.coverage_pct.toFixed(1)}%</span>
+                    {evaluation.is_incomplete && (
+                      <Badge variant="destructive" className="text-xs">Unvollständig</Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">Gesamt-P&L:</span>
+                    <span className="font-mono text-xs">
+                      {evaluation.total_result_pnl.toFixed(2)}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {evaluation.regime_dominance && (
+                <Alert>
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  <AlertDescription>
+                    Regime-Dominanz: <strong>{REGIME_LABELS[evaluation.regime_dominance] ?? evaluation.regime_dominance}</strong> liefert
+                    mehr als 70 % der positiven Beiträge. Der Gesamterfolg hängt stark
+                    von dieser einen Marktphase ab.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Regime</TableHead>
+                    <TableHead>Trades</TableHead>
+                    <TableHead>Netto-P&L</TableHead>
+                    <TableHead>Max DD</TableHead>
+                    <TableHead>Anteil</TableHead>
+                    <TableHead>Calmar</TableHead>
+                    <TableHead>Sortino</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {evaluation.regime_details.map((d) => (
+                    <TableRow key={d.regime}>
+                      <TableCell>
+                        <Badge variant={REGIME_BADGE_VARIANT[d.regime] ?? "outline"} className="text-xs">
+                          {REGIME_LABELS[d.regime] ?? d.regime}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {d.trade_count}
+                        {d.small_sample && (
+                          <Badge variant="outline" className="ml-1 text-xs text-amber-600 border-amber-300">
+                            Kleine Stichprobe
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className={`font-mono text-xs ${d.net_pnl >= 0 ? "text-emerald-600" : "text-red-500"}`}>
+                        {d.net_pnl.toFixed(2)}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {d.max_drawdown_pct !== null ? `${d.max_drawdown_pct.toFixed(1)}%` : "–"}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {d.pnl_share_pct.toFixed(1)}%
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {d.calmar_ratio !== null ? d.calmar_ratio.toFixed(2) : "–"}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {d.sortino_ratio !== null ? d.sortino_ratio.toFixed(2) : "–"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleFetchTrades}
+                disabled={fetchingTrades}
+              >
+                {fetchingTrades && <Loader className="mr-1 h-3 w-3 animate-spin" />}
+                Trades neu laden
+              </Button>
+            </div>
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 

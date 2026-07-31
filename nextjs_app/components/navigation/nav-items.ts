@@ -4,6 +4,7 @@ import {
   BarChart3,
   Settings,
   Upload,
+  Gauge,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,6 +33,12 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/hal-import",
     icon: Upload,
     matchPaths: ["/hal-import"],
+  },
+  {
+    label: "Regime",
+    href: "/regime",
+    icon: Gauge,
+    matchPaths: ["/regime"],
   },
   {
     label: "Ergebnisse",

@@ -70,6 +70,11 @@ def get_backtest_result(job_id: str) -> dict[str, Any]:
     return _call_tool("get_backtest_result", {"jobId": job_id})
 
 
+def get_trades(result_id: str) -> list[dict[str, Any]]:
+    """Lädt die Trade-Liste eines Backtest-Ergebnisses von trader.dev."""
+    return _call_tool("get_trades", {"jobId": result_id})
+
+
 def _fetch_backtest_result(result_id: str) -> dict[str, Any]:
     try:
         headers = {"User-Agent": "strategy-bank/1.0"}

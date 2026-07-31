@@ -20,6 +20,7 @@ from .routes import export as export_routes
 from .routes import extractions as extraction_routes
 from .routes import hal_results as hal_result_routes
 from .routes import hal_sync as hal_sync_routes
+from .routes import regime as regime_routes
 from .routes import results as result_routes
 from .routes import runs as run_routes
 from .routes import shortlist as shortlist_routes
@@ -112,6 +113,7 @@ app.include_router(hal_result_routes.router)
 app.include_router(shortlist_routes.router)
 app.include_router(batch_routes.router)
 app.include_router(audit_routes.router)
+app.include_router(regime_routes.router)
 app.include_router(result_routes.router)
 app.include_router(run_routes.router)
 app.include_router(execution_routes.router)
