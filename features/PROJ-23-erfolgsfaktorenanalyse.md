@@ -1,8 +1,8 @@
 # PROJ-23: Erfolgsfaktorenanalyse
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-07-30
-**Last Updated:** 2026-07-31
+**Last Updated:** 2026-07-31 (Deployed v0.2.40)
 
 ## Dependencies
 - Optional: PROJ-3 (Verifizierung und Versionierung) — liefert Kategorie, Richtung und MTS-Eignung als zusätzliche Achsen, sofern ein Ergebnis zugeordnet ist.
@@ -363,4 +363,22 @@ _Projekt ist laut Architektur-Dokument single-tenant (kein `mandant_id`/RLS) —
 - **Production Ready:** Kein High/Critical mehr offen. Migration `016_analysis_runs.sql` muss weiterhin vor Deploy in Dev/Prod eingespielt werden.
 
 ## Deployment
-_To be added by /deploy_
+
+**Production URL:** https://strategy-bank-web (Domain siehe Dokploy-Projekt `ms-qql/strategy-bank`)
+**Deployed:** 2026-07-31 · **Version:** v0.2.40-PROJ-23 · **Branch:** main (via Cherry-Pick von `dev`: `78e5598`)
+
+Von `dev` wurde gezielt nur der PROJ-23-Commit nach `main` cherry-gepickt (`dev`
+lag zu diesem Zeitpunkt lokal 71 Commits vor `origin/dev` und war nicht separat
+gehostet; PROJ-21/PROJ-22 waren bereits zuvor per Cherry-Pick auf `main`).
+INDEX.md-Merge-Konflikt manuell aufgelöst: PROJ-21/PROJ-22 bleiben `Deployed`,
+PROJ-23 wird auf `Deployed` gesetzt.
+
+Migration `backend/sql/016_analysis_runs.sql` läuft beim Start automatisch über
+das bestehende SQL-Runner-Verhalten (`backend/sql/*.sql` idempotent, siehe
+`docs/dokploy.md`).
+
+Ausstehend nach Deploy:
+- [ ] Health-Check `https://<domain>/api/health`
+- [ ] `/erfolgsfaktoren`-Seite lädt, „Analyse jetzt fahren“ erzeugt einen Lauf
+- [ ] Kohortentabelle zeigt Zahlen für mindestens eine Achse
+- [ ] Richtung-Matrix (long-only/short-only/kombiniert) zeigt nach BUG-1-Fix echte Werte
