@@ -30,7 +30,8 @@ def _clean_db():
         "strategy_versions, version_parameters, "
         "backtest_profiles, batches, batch_instruments, batch_strategy_versions, "
         "batch_direction_modes, runs, run_audits, backtest_executions, "
-        "family_holdout_status, worker_heartbeat CASCADE"
+        "family_holdout_status, worker_heartbeat, "
+        "analysis_run_rows, analysis_runs CASCADE"
     )
     run_command(
         "INSERT INTO worker_heartbeat (worker_id, last_heartbeat) "

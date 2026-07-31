@@ -5,6 +5,7 @@ import {
   Settings,
   Upload,
   Gauge,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 
@@ -39,6 +40,12 @@ export const NAV_ITEMS: NavItem[] = [
     href: "/regime",
     icon: Gauge,
     matchPaths: ["/regime"],
+  },
+  {
+    label: "Erfolgsfaktoren",
+    href: "/erfolgsfaktoren",
+    icon: TrendingUp,
+    matchPaths: ["/erfolgsfaktoren"],
   },
   {
     label: "Ergebnisse",

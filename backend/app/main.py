@@ -12,6 +12,7 @@ from psycopg.errors import ForeignKeyViolation, InvalidTextRepresentation
 
 from .config import settings
 from .db import run_command, run_query
+from .routes import analysis as analysis_routes
 from .routes import audit as audit_routes
 from .routes import batches as batch_routes
 from .routes import drafts as draft_routes
@@ -104,6 +105,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+app.include_router(analysis_routes.router)
 app.include_router(source_routes.router)
 app.include_router(extraction_routes.router)
 app.include_router(draft_routes.router)

@@ -1,8 +1,8 @@
 # PROJ-23: Erfolgsfaktorenanalyse
 
-## Status: Architected
+## Status: Approved
 **Created:** 2026-07-30
-**Last Updated:** 2026-07-30
+**Last Updated:** 2026-07-31
 
 ## Dependencies
 - Optional: PROJ-3 (Verifizierung und Versionierung) — liefert Kategorie, Richtung und MTS-Eignung als zusätzliche Achsen, sofern ein Ergebnis zugeordnet ist.
@@ -235,7 +235,132 @@ Vier Endpunkte, keine Änderung an bestehenden Routen.
 
 
 ## QA Test Results
-_To be added by /qa_
+
+**Tested:** 2026-07-31
+**Backend:** FastAPI (Conda env `Dashboard`), gegen `strategy_bank_test`-DB via `TestClient`
+**Frontend:** Code-Review + `tsc --noEmit` (kein laufender Next.js-Dev-Server für diesen Lauf)
+**Tester:** QA Engineer (AI)
+
+### Setup-Hinweis
+Migration `backend/sql/016_analysis_runs.sql` war weder in der Test- noch (vermutlich) in der Dev/Prod-Datenbank angewendet. Für diesen Testlauf wurde sie manuell auf `strategy_bank_test` angewendet. **Vor Deploy: Migration explizit einspielen.**
+
+### Acceptance Criteria Status
+
+#### Analyselauf und Merkmalsableitung
+- [x] Ein Klick auf „Analyse jetzt fahren“ genügt, keine Abfrage nötig
+- [x] Lauf verändert `hal_results`/`strategy_versions` nicht (live geprüft: Zeilenzahl vor/nach unverändert)
+- [x] Merkmale deterministisch aus Pine-Code, kein KI-Aufruf (reine Regex-Ableitung in `pine_features.py`)
+- [x] Ergebnis ohne Pine-Code wird als „ohne Pine-Code“ ausgeschlossen (live verifiziert)
+- [x] Indikator zählt je Ergebnis einmal (Set-basierte Extraktion)
+- [x] Nicht ableitbare Archetypen bleiben „nicht verfügbar“
+- [x] Zählwerte getrennt, kein Einfachheitsscore
+- [x] Leere Indikatorlisten zulässig (keine Pflichtprüfung auf Mindestlänge)
+
+#### Läufe und Nachvollziehbarkeit
+- [x] Zeitpunkt, Erfolgsdefinition, einbezogen/ausgeschlossen werden gespeichert
+- [x] Lauf listet beteiligte Ergebnisse mit Merkmalen (`rows`)
+- [x] Frühere Läufe sind eingefroren (Zeilen werden zum Laufzeitpunkt kopiert, nicht live nachgeführt)
+- [x] Lauf löschbar, ohne Ergebnisse/Strategien zu berühren (live verifiziert)
+
+#### Vergleichsgrundlage
+- [x] Analyse arbeitet innerhalb einer Profilgruppe (größte Gruppe wird automatisch gewählt)
+- [x] Erfolgsgruppe nutzt Calmar ≥0,8 / Sortino ≥0,5 / ≥6 Trades/Jahr (live verifiziert, gleiche Formel wie `results.py`)
+- [ ] BUG-2: Dedublizierung „aktuelles Ergebnis je Strategieversion“ ist nicht deterministisch (siehe Bugs)
+- [x] Ergebnis ohne Merkmale bleibt im Screener sichtbar, wird im Lauf als „ohne Merkmale“ (hier: „ohne Pine-Code“) ausgeschlossen
+- [x] Aktive Filter + Zahlen einbezogen/ausgeschlossen werden angezeigt
+- [ ] BUG-4: „andere Vergleichsgruppe“-Badge erscheint auch mit Zählwert 0
+
+#### Kohortentabelle
+- [x] Spalten Erfolgreich/Gesamt/Erfolgsquote/Lift/Median-Calmar vorhanden
+- [x] Erfolgsquote-Formel korrekt (live verifiziert)
+- [x] Lift-Formel korrekt (live verifiziert, inkl. Lift=null bei leerer Erfolgsgruppe)
+- [x] Nenner 0 → „nicht verfügbar“, nie 0 oder unendlich
+- [x] Zähler/Nenner immer gemeinsam angezeigt (`8/17`)
+- [x] Sortierbar, nicht-verfügbare Werte immer am Ende (unabhängig von Sortierrichtung, korrekt implementiert)
+- [x] Balken unterstützen nur, ersetzen Zahl nicht
+- [x] Alle geforderten Achsen sind auswählbar (`AXIS_OPTIONS`)
+- [ ] BUG-1: Richtung-Matrix (long-only/short-only/kombiniert) ist immer leer (siehe Bugs)
+- [x] PROJ-22-Regime wird nicht eingebunden (Non-Goal für diesen Lauf nicht verletzt, aber auch nicht umgesetzt — optional laut Spec)
+
+#### Sprache und Interpretation
+- [x] UI verwendet „Zusammenhang“/„Lift“, keine Kausalsprache
+- [x] Kein Composite Score, keine Empfehlung, keine versteckte Mindeststichprobe
+- [ ] BUG-3: Pflichttext „Keine Ergebnisse erfüllen die aktuelle Erfolgsdefinition.“ fehlt bei leerer Erfolgsgruppe
+
+### Edge Cases Status
+
+- [x] Leere Erfolgsgruppe: Quote 0/N korrekt, Lift „nicht verfügbar“ (live verifiziert) — Text-Hinweis fehlt (BUG-3)
+- [ ] Alle Ergebnisse in Erfolgsgruppe (Lift=1,0 überall): nicht separat live getestet, Formel legt das nahe (Division success_share/total_share =1 wenn total_success=total_all)
+- [x] Indikator mehrfach im Code: zählt einmal (Set-basiert, code-seitig korrekt)
+- [x] Mehrere Indikatoren pro Ergebnis: Zeilensummen müssen nicht der Strategiezahl entsprechen (so implementiert)
+- [x] `1/1` ohne Signifikanzbehauptung: UI zeigt reine Zahlen
+- [ ] BUG-2: Erneuter Import/Korrektur derselben Strategieversion — welche Zeile „gewinnt“, ist nicht deterministisch
+- [x] Ergebnis ohne Strategieversion: zählt mit, Achsenfelder „nicht verfügbar“ (durch `sv.snapshot->>...` NULL-Handling)
+
+### Security Audit Results
+_Projekt ist laut Architektur-Dokument single-tenant (kein `mandant_id`/RLS) — Standardprüfungen (Tenant-Isolation, JWT) entfallen dadurch bewusst._
+- [x] Nur parametrisierte SQL (`%s`-Platzhalter), keine f-String-Injektion gefunden
+- [x] Read-only Charakter des Laufs live bestätigt (keine Seiteneffekte auf Strategiebestand)
+- [x] Kein Zugriff auf fremde Daten möglich, da keine Mandantentrennung im Scope dieses Projekts existiert
+
+### Bugs Found
+
+#### BUG-1: Richtung-Matrix ist immer leer
+- **Severity:** High
+- **Steps to Reproduce:**
+  1. Analyselauf starten, Achse „Richtung“ wählen, Matrix-Checkbox aktivieren
+  2. Erwartet: drei Zeilen long-only/short-only/kombiniert mit echten Zahlen
+  3. Tatsächlich: alle drei Zeilen bleiben leer, weil das Frontend gegen `"long"`/`"short"`/`"bidirektional"` statt der tatsächlich gespeicherten Werte `"long-only"`/`"short-only"`/`"kombiniert"` filtert (live gegen Testdaten verifiziert)
+- **Priority:** Fix before deployment
+
+#### BUG-2: Nicht-deterministisches Dedup/Gruppenwahl bei erneuten Importen
+- **Severity:** Medium
+- **Steps to Reproduce:**
+  1. Strategieversion X importieren (aktuell)
+  2. Dieselbe Strategieversion X über eine zweite Datei erneut importieren/korrigieren
+  3. Analyselauf starten
+  4. Erwartet: der neue Lauf zeigt den korrigierten Stand
+  5. Tatsächlich: welche der beiden „aktuellen“ Zeilen in den Lauf einfließt, hängt von der undefinierten Postgres-Scan-Reihenfolge ab (kein `ORDER BY` vor dem Dedup in `analysis.py`)
+- **Priority:** Fix before deployment
+
+#### BUG-3: Fehlender Pflichttext bei leerer Erfolgsgruppe
+- **Severity:** Low
+- **Steps to Reproduce:**
+  1. Analyselauf mit ausschließlich erfolglosen Ergebnissen starten
+  2. Erwartet laut Spec: Hinweistext „Keine Ergebnisse erfüllen die aktuelle Erfolgsdefinition.“
+  3. Tatsächlich: nur Zahlen 0/N ohne Erklärung
+- **Priority:** Fix in next sprint
+
+#### BUG-4: „andere Vergleichsgruppe“-Badge mit Zählwert 0
+- **Severity:** Low
+- **Steps to Reproduce:**
+  1. Analyselauf starten, wenn der gesamte Bestand einer Vergleichsgruppe angehört
+  2. Erwartet: kein Badge für einen Ausschlussgrund mit 0 Treffern
+  3. Tatsächlich: Badge „andere Vergleichsgruppe: 0“ wird trotzdem angezeigt
+- **Priority:** Nice to have
+
+#### BUG-5: Kein automatisierter Backend-Test für PROJ-23
+- **Severity:** Medium
+- **Steps to Reproduce:**
+  1. `ls backend/tests/test_analysis*` → nicht vorhanden
+  2. Kein Akzeptanzkriterium ist regressionsgesichert; zusätzlich fehlen `analysis_runs`/`analysis_run_rows` in der `_clean_db`-TRUNCATE-Liste in `conftest.py`, wodurch künftige Tests Zustand über Testläufe hinweg ansammeln würden
+- **Priority:** Fix before deployment
+
+### Summary
+- **Acceptance Criteria:** 24/29 Sub-Kriterien bestanden, 5 mit Bugs behaftet
+- **Bugs Found:** 5 total (0 critical, 1 high, 2 medium, 2 low)
+- **Security:** Pass (single-tenant Scope, keine Injection-Vektoren gefunden)
+- **Production Ready:** NO
+- **Recommendation:** BUG-1, BUG-2 und BUG-5 vor Deploy fixen; BUG-3/BUG-4 können optional mitgenommen werden. Migration `016_analysis_runs.sql` vor Deploy einspielen.
+
+### Retest 2026-07-31 (nach Fix von BUG-1, BUG-2, BUG-5)
+
+- **BUG-1 (Richtung-Matrix):** FIXED — `directions` in `page.tsx` auf `long-only`/`short-only`/`kombiniert` korrigiert. Neuer Test `test_direction_axis_uses_canonical_values` deckt die kanonischen Werte ab.
+- **BUG-2 (nicht-deterministisches Dedup):** FIXED — `comparable`-Query in `analysis.py` jetzt `ORDER BY hr.created_at DESC`; Dedup behält damit deterministisch den neuesten Import je Strategieversion. Neuer Test `test_reimport_of_same_version_keeps_only_newest` verifiziert, dass die korrigierte Zeile gewinnt.
+- **BUG-5 (fehlender Backend-Test):** FIXED — `backend/tests/test_analysis.py` neu angelegt (11 Tests, decken Analyselauf-Erstellung, Erfolgsklassifikation, Merkmalsableitung, Dedup, Richtungsachse, leere Erfolgsgruppe, Read-only-Charakter, Achsen-Validierung, Löschen, Listen ab). `_clean_db` in `conftest.py` truncatet jetzt zusätzlich `analysis_run_rows`/`analysis_runs`.
+- Verifiziert: `pytest backend/tests` (320 Tests, alle grün, keine Regression) + `tsc --noEmit` (keine Typfehler).
+- BUG-3 (fehlender Leer-Text) und BUG-4 (0-Badge) bleiben offen — beide Low, optional.
+- **Production Ready:** Kein High/Critical mehr offen. Migration `016_analysis_runs.sql` muss weiterhin vor Deploy in Dev/Prod eingespielt werden.
 
 ## Deployment
 _To be added by /deploy_

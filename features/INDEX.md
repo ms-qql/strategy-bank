@@ -26,7 +26,7 @@
 | PROJ-20 | PDF, EPUB und MOBI als Markdown importieren | Deployed (Mehrfach-Upload, 2026-07-29, v0.2.34) | P1 | PROJ-1, PROJ-2, PROJ-14 |
 | PROJ-21 | HAL-Import und Ergebnis-Screening | Deployed (2026-07-30, v0.2.38) | P0 | PROJ-3, PROJ-7 |
 | PROJ-22 | Regime-Analyse | Deployed (2026-07-31, v0.2.39) | P1 | PROJ-21 |
-| PROJ-23 | Erfolgsfaktorenanalyse | Architected | P1 | PROJ-21 |
+| PROJ-23 | Erfolgsfaktorenanalyse | Approved | P1 | PROJ-21 |
 | PROJ-24 | Robustheitslabor | Planned | P2 | PROJ-3, PROJ-21 |
 | PROJ-25 | Crypto-MTS-Forecast-Varianten | Planned | P3 | PROJ-10, PROJ-21, PROJ-24 |
 
