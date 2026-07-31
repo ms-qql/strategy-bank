@@ -1,8 +1,8 @@
 # PROJ-22: Regime-Analyse
 
-## Status: Approved
+## Status: Deployed
 **Created:** 2026-07-30
-**Last Updated:** 2026-07-31 (Retest nach Bug-1-3-Fixes: 0 Critical/High offen, Approved)
+**Last Updated:** 2026-07-31 (Deployed v0.2.39)
 
 ## Dependencies
 - Requires: PROJ-21 (HAL-Import und Ergebnis-Screening) — liefert zugeordnete Ergebnisse und deren Testkontext.
@@ -369,7 +369,20 @@ Kein Fehler, keine Warnung — ein Timeframe außerhalb `1h/4h/1d` wird stillsch
 - **Production-Ready: JA** — 0 Critical/High offen. Bug 4 + Bug 5 als bekannte Limitationen für PROJ-24/25 vormerken (zweite Modellversion / neue Timeframes).
 
 ## Deployment
-_To be added by /deploy_
+
+**Production URL:** https://strategy-bank-web (Domain siehe Dokploy-Projekt `ms-qql/strategy-bank`)
+**Deployed:** 2026-07-31 · **Version:** v0.2.39-PROJ-22 · **Branch:** main (via Cherry-Pick von `dev`: `0687923`, `ad7cb2e`)
+
+Von `dev` wurden gezielt nur die beiden PROJ-22-Commits nach `main` cherry-gepickt
+(`dev` enthielt parallel unfertige PROJ-23-Arbeit, nicht approved — nicht mitgezogen).
+INDEX.md-Merge-Konflikt manuell aufgelöst: PROJ-21 bleibt `Deployed`, PROJ-23 bleibt
+`Architected` (PROJ-23-Code ist nicht auf `main`).
+
+Ausstehend nach Deploy:
+- [ ] Health-Check `https://<domain>/api/health`
+- [ ] `/regime`-Seite lädt, Modellversion anlegen funktioniert
+- [ ] Zeitreihe BTCUSDT 4h refreshen (Bybit-Live-Abruf, Bug-1-Fix in Produktion verifizieren)
+- [ ] Regime-Sheet auf `/ergebnisse` für einen HAL-Import-Eintrag öffnen
 
 ## Implementation Notes (Backend)
 **Completed:** 2026-07-30
